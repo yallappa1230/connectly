@@ -1644,6 +1644,7 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
               <button type="button" onClick={() => { setNewChatOpen(true); setNewGroupMode(false); setMoreMenuOpen(false) }}>New chat</button>
               <button type="button" onClick={() => { setNewChatOpen(true); setNewGroupMode(true); setMoreMenuOpen(false) }}>New group</button>
               <button type="button" onClick={() => void markAllChatsRead()}>Mark all as read</button>
+              <button type="button" onClick={() => { setMoreMenuOpen(false); void loadSavedMessages() }}>Connectly Notes</button>
               <button type="button" onClick={() => { setTab('profile'); setMoreMenuOpen(false) }}>Settings & profile</button>
               <button type="button" onClick={() => { setMoreMenuOpen(false); void signOut() }}>Sign out</button>
             </div>}
@@ -1803,12 +1804,32 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
                             const original = chatMessages.find((message) => message.id === item.reply_to_message_id)
                             return original ? <div className="chat-reply-reference"><small>{original.sender_id === userId ? 'You' : nameOf(activeChatPerson)} replied to</small><p>{original.content}</p></div> : null
                           })()}
+                          {messageAttachments.filter((attachment) => attachment.message_id === item.id).map((attachment) => attachment.signed_url ? <div className="chat-attachment-preview" key={attachment.id}>
+                            {attachment.media_kind === 'image'
+                              ? <a href={attachment.signed_url} target="_blank" rel="noreferrer"><img src={attachment.signed_url} alt={attachment.original_name} /></a>
+                              : attachment.media_kind === 'video'
+                                ? <video controls preload="metadata" src={attachment.signed_url} />
+                                : attachment.media_kind === 'audio'
+                                  ? <audio controls preload="metadata" src={attachment.signed_url} />
+                                  : <a className="chat-document-link" href={attachment.signed_url} target="_blank" rel="noreferrer">📄 {attachment.original_name} · Download</a>}
+                          </div> : null)}
                           <p>{item.content}</p>
                           <time>{new Date(item.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}{item.sender_id === userId && <span className="message-sent-check" aria-label="Sent"> ✓</span>}</time>
                         </div>
+                        {messageReactions.some((reaction) => reaction.message_id === item.id) && <div className="message-reaction-list">
+                          {[...new Set(messageReactions.filter((reaction) => reaction.message_id === item.id).map((reaction) => reaction.emoji))].map((emoji) => {
+                            const rows = messageReactions.filter((reaction) => reaction.message_id === item.id && reaction.emoji === emoji)
+                            return <button type="button" key={emoji} className={`message-reaction-chip ${rows.some((row) => row.user_id === userId) ? 'mine' : ''}`} onClick={() => void toggleMessageReaction(item, emoji)}>{emoji} <span>{rows.length}</span></button>
+                          })}
+                        </div>}
+                        {reactionMenuFor === item.id && <div className="message-quick-reactions">
+                          {['👍','❤️','😂','😮','🙏','🔥'].map((emoji) => <button type="button" key={emoji} onClick={() => void toggleMessageReaction(item, emoji)}>{emoji}</button>)}
+                        </div>}
                         <button type="button" className="message-options-button" title="Message options" aria-label="Message options" onClick={() => setMessageMenuFor(messageMenuFor === item.id ? null : item.id)}>⋮</button>
                         {messageMenuFor === item.id && <div className="message-options-menu">
                           <button type="button" onClick={() => { setReplyingTo(item); setMessageMenuFor(null); setEmojiOpen(false) }}>Reply</button>
+                          <button type="button" onClick={() => { setReactionMenuFor(reactionMenuFor === item.id ? null : item.id); setMessageMenuFor(null) }}>React</button>
+                          <button type="button" onClick={() => void toggleSavedMessage(item)}>{savedMessageIds.includes(item.id) ? 'Remove from Connectly Notes' : 'Save to Connectly Notes'}</button>
                           <button type="button" onClick={() => void copyMessage(item)}>Copy</button>
                           {item.sender_id === userId && <button type="button" className="message-delete-option" onClick={() => void deleteOwnMessage(item)}>Delete for everyone</button>}
                         </div>}
@@ -1825,14 +1846,22 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
               {emojiOpen && <div className="chat-emoji-picker" role="group" aria-label="Choose an emoji">
                 {['😀','😂','🥰','😊','😍','👍','🙏','❤️','🎉','🔥','👏','🤗','😎','✨','💯','👋'].map((emoji) => <button type="button" key={emoji} onClick={() => setChatDraft((value) => value + emoji)}>{emoji}</button>)}
               </div>}
+              <input ref={attachmentInputRef} type="file" accept="image/*,video/mp4,video/webm" hidden onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void uploadMessageFile(file); event.currentTarget.value = '' }} />
+              <input ref={documentInputRef} type="file" accept=".pdf,.txt,.zip,.docx" hidden onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void uploadMessageFile(file); event.currentTarget.value = '' }} />
+              <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" hidden onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void uploadMessageFile(file); event.currentTarget.value = '' }} />
+              {mediaMenuOpen && <div className="chat-media-menu">
+                <button type="button" onClick={() => { setMediaMenuOpen(false); attachmentInputRef.current?.click() }}>▧ Photos & videos</button>
+                <button type="button" onClick={() => { setMediaMenuOpen(false); documentInputRef.current?.click() }}>▤ Documents</button>
+                <button type="button" onClick={() => { setMediaMenuOpen(false); cameraInputRef.current?.click() }}>▣ Camera</button>
+              </div>}
+              {recordingVoice && <div className="voice-recording-banner"><span className="recording-dot" /> Recording voice message… <button type="button" onClick={() => void toggleVoiceRecording()}>Stop</button></div>}
               <form className="chat-compose whatsapp-composer" onSubmit={sendChatMessage}>
                 <button type="button" className={`composer-action-button ${emojiOpen ? 'active' : ''}`} aria-label="Emoji" title="Emoji" onClick={() => setEmojiOpen((value) => !value)}>☺</button>
                 <input value={chatDraft} onChange={(event) => setChatDraft(event.target.value)} maxLength={5000} placeholder="Message" aria-label="Message" />
-                <button type="button" className="composer-action-button" aria-label="Attachments" title="Photo and file sharing is coming next" disabled>⌁</button>
-                <button type="button" className="composer-action-button" aria-label="Camera" title="Camera sharing is coming next" disabled>▣</button>
+                <button type="button" className={`composer-action-button ${mediaMenuOpen ? 'active' : ''}`} aria-label="Attachments" title="Attach photo, video or document" disabled={uploadingMedia || chatBusy} onClick={() => setMediaMenuOpen((value) => !value)}>⌁</button>
                 {chatDraft.trim()
-                  ? <button type="submit" className="composer-send-button" aria-label="Send message" title="Send message" disabled={chatBusy}>{chatBusy ? '…' : '➤'}</button>
-                  : <button type="button" className="composer-mic-button" aria-label="Voice messages coming next" title="Voice messages are coming next" disabled>♩</button>}
+                  ? <button type="submit" className="composer-send-button" aria-label="Send message" title="Send message" disabled={chatBusy || uploadingMedia}>{chatBusy || uploadingMedia ? '…' : '➤'}</button>
+                  : <button type="button" className={`composer-mic-button ${recordingVoice ? 'recording' : ''}`} aria-label={recordingVoice ? 'Stop voice recording' : 'Record voice message'} title={recordingVoice ? 'Stop recording' : 'Record voice message'} disabled={uploadingMedia || chatBusy} onClick={() => void toggleVoiceRecording()}>{recordingVoice ? '■' : '♩'}</button>}
               </form>
             </section>
           </>}
