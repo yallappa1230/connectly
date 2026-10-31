@@ -421,6 +421,7 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
   }
 
   async function waitForCallChannel(channel: ReturnType<typeof supabase.channel>) {
+    await supabase.realtime.setAuth()
     await new Promise<void>((resolve, reject) => {
       let settled = false
       const timeout = setTimeout(() => {
@@ -854,11 +855,17 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
           cleanupCall()
         }
       })
-      .subscribe((status, channelError) => {
+
+    void supabase.realtime.setAuth().then(() => {
+      if (!mounted) return
+      channel.subscribe((status, channelError) => {
         if (mounted && (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT')) {
           setCallError(channelError instanceof Error ? channelError.message : 'Call notifications could not connect.')
         }
       })
+    }).catch(() => {
+      if (mounted) setCallError('Call notifications could not authenticate. Please sign in again.')
+    })
 
     return () => {
       mounted = false
