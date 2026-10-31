@@ -73,3 +73,19 @@ Database requirements already applied to the live Connectly project:
 - `public.messages` is included in the `supabase_realtime` publication.
 
 To test, use two separate, email-confirmed accounts. Accept a friend request, open Friends, choose **Message**, send a message, then sign in as the other friend to verify receipt. Do not use a service-role key in the app.
+
+## In-app audio and video calls
+
+Connectly includes browser-native WebRTC audio and video calling. It does not open a separate calling website or record calls. Supabase Realtime private Broadcast channels carry only call setup/signaling; the media connection is peer-to-peer.
+
+The live Supabase project has the RLS policies from `supabase/call-signaling-policies.sql`. Both personal incoming-call topics and pair call topics are restricted to authenticated, accepted, unblocked friends. The client explicitly joins private Realtime channels.
+
+The initial ICE configuration uses public STUN servers only. This can work for many networks, but some mobile/carrier NATs require a TURN relay. No TURN relay is configured yet, so direct calls may fail on restrictive networks. For dependable calling, configure a private TURN service and issue short-lived credentials server-side; never put long-lived TURN secrets in `NEXT_PUBLIC_*` variables.
+
+To test, use two separate signed-in devices/accounts that are accepted friends:
+1. Open the chat, tap the other person's name/photo, then select Audio call or Video call.
+2. On the other device, accept or decline the incoming call.
+3. Test microphone mute, camera toggle, hang up, and repeat on mobile data and Wi-Fi.
+4. Block or remove the friendship and verify new calls are rejected.
+
+Calls require HTTPS and browser permission for microphone/camera. If permissions are denied, enable them in the browser's site settings.
