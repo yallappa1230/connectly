@@ -330,6 +330,38 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
   useEffect(() => { void refresh() }, [refresh])
 
   useEffect(() => {
+    let active = true
+    void (async () => {
+      const { data, error: loadError } = await supabase
+        .from('user_privacy_settings')
+        .select('user_id,allow_friend_requests,discoverable,read_receipts')
+        .eq('user_id', userId)
+        .maybeSingle()
+      if (!active) return
+      if (loadError) {
+        setError(loadError.message)
+        return
+      }
+      if (data) {
+        setPrivacySettings(data as PrivacySettings)
+      } else {
+        const defaults: PrivacySettings = {
+          user_id: userId,
+          allow_friend_requests: true,
+          discoverable: true,
+          read_receipts: true,
+        }
+        const { error: insertError } = await supabase
+          .from('user_privacy_settings')
+          .upsert(defaults, { onConflict: 'user_id' })
+        if (active && insertError) setError(insertError.message)
+        if (active && !insertError) setPrivacySettings(defaults)
+      }
+    })()
+    return () => { active = false }
+  }, [supabase, userId])
+
+  useEffect(() => {
     try {
       const saved = window.localStorage.getItem('connectly-theme')
       if (saved === 'black' || saved === 'white' || saved === 'glass') setTheme(saved)
@@ -1064,6 +1096,335 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
     }
   }, [supabase, userId])
 
+  async function savePrivacySetting(field: 'allow_friend_requests'|'discoverable'|'read_receipts', value: boolean) {
+    const next = { ...privacySettings, [field]: value, updated_at: new Date().toISOString() }
+    setPrivacySettings(next)
+    const { error: saveError } = await supabase.from('user_privacy_settings')
+      .upsert(next, { onConflict: 'user_id' })
+    if (saveError) {
+      setPrivacySettings((current) => ({ ...current, [field]: !value }))
+      setError(saveError.message)
+    } else {
+      setMessage('Privacy settings saved.')
+    }
+  }
+
+  async function sha256Hex(value: string) {
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
+    return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
+  }
+
+  async function createFriendQr() {
+    setQrBusy(true)
+    setError('')
+    try {
+      const random = crypto.getRandomValues(new Uint8Array(32))
+      const rawToken = Array.from(random, (byte) => byte.toString(16).padStart(2, '0')).join('')
+      const tokenHash = await sha256Hex(rawToken)
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString()
+      await supabase.from('friend_qr_tokens').update({ revoked_at: new Date().toISOString() })
+        .eq('user_id', userId).is('redeemed_at', null).is('revoked_at', null)
+      const { error: insertError } = await supabase.from('friend_qr_tokens').insert({
+        user_id: userId,
+        token_hash: tokenHash,
+        expires_at: expiresAt,
+      })
+      if (insertError) throw insertError
+
+      const { data, error: qrError } = await supabase.functions.invoke('qr-render', {
+        body: { value: rawToken },
+      })
+      if (qrError) throw qrError
+      if (!data?.svg) throw new Error('The QR image could not be generated.')
+      setQrToken(rawToken)
+      setQrExpiresAt(expiresAt)
+      setQrSvg(String(data.svg))
+      setQrMode('show')
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not create your friend QR.')
+    } finally {
+      setQrBusy(false)
+    }
+  }
+
+  async function redeemFriendQr() {
+    const token = qrInput.match(/[a-f0-9]{64}/i)?.[0]?.toLowerCase()
+    if (!token) {
+      setError('Scan a Connectly QR code or paste its 64-character code.')
+      return
+    }
+    setQrBusy(true)
+    clearFeedback()
+    try {
+      const tokenHash = await sha256Hex(token)
+      const { data, error: redeemError } = await supabase.rpc('redeem_friend_qr_token', {
+        p_token_hash: tokenHash,
+      })
+      if (redeemError) throw redeemError
+      const result = Array.isArray(data) ? data[0] : data
+      if (!result) throw new Error('This QR code could not be redeemed.')
+      const status = String(result.request_status ?? 'pending')
+      setMessage(status === 'accepted'
+        ? 'You are already connected with this person.'
+        : status === 'request_received'
+          ? 'This person has already sent you a request. Check received requests.'
+          : 'Friend request sent from QR connection.')
+      setQrMode(null)
+      setQrInput('')
+      await refresh()
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not connect using this QR code.')
+    } finally {
+      setQrBusy(false)
+    }
+  }
+
+  useEffect(() => {
+    if (qrMode !== 'scan' || !qrCameraActive) return
+    let cancelled = false
+    let frame = 0
+    let stream: MediaStream | null = null
+    const Detector = (window as unknown as {
+      BarcodeDetector?: new (options: { formats: string[] }) => {
+        detect: (source: HTMLVideoElement) => Promise<Array<{ rawValue: string }>>
+      }
+    }).BarcodeDetector
+
+    if (!Detector || !navigator.mediaDevices?.getUserMedia) {
+      setQrCameraActive(false)
+      setMessage('Camera scanning is unavailable in this browser. Paste the QR code text below instead.')
+      return
+    }
+
+    void (async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
+        if (cancelled || !qrScanVideoRef.current) {
+          stream.getTracks().forEach((track) => track.stop())
+          return
+        }
+        qrCameraStreamRef.current = stream
+        qrScanVideoRef.current.srcObject = stream
+        await qrScanVideoRef.current.play()
+        const detector = new Detector({ formats: ['qr_code'] })
+        const scanFrame = async () => {
+          if (cancelled || !qrScanVideoRef.current) return
+          try {
+            const codes = await detector.detect(qrScanVideoRef.current)
+            if (codes[0]?.rawValue) {
+              setQrInput(codes[0].rawValue)
+              setQrCameraActive(false)
+              setMessage('QR detected. Tap Connect to continue.')
+              return
+            }
+          } catch {
+            // Continue scanning; temporary camera frames may not decode.
+          }
+          frame = requestAnimationFrame(() => { void scanFrame() })
+        }
+        void scanFrame()
+      } catch (caught) {
+        if (!cancelled) setError(caught instanceof Error ? caught.message : 'Camera access was not available.')
+        setQrCameraActive(false)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+      if (frame) cancelAnimationFrame(frame)
+      stream?.getTracks().forEach((track) => track.stop())
+      qrCameraStreamRef.current?.getTracks().forEach((track) => track.stop())
+      qrCameraStreamRef.current = null
+    }
+  }, [qrMode, qrCameraActive])
+
+  async function toggleMessageReaction(item: MessageRow, emoji: string) {
+    const existing = messageReactions.find((row) => row.message_id === item.id && row.user_id === userId && row.emoji === emoji)
+    const result = existing
+      ? await supabase.from('message_reactions').delete().eq('message_id', item.id).eq('user_id', userId).eq('emoji', emoji)
+      : await supabase.from('message_reactions').insert({ message_id: item.id, user_id: userId, emoji })
+    if (result.error) {
+      setError(result.error.message)
+      return
+    }
+    setReactionMenuFor(null)
+    await loadChatMessages(item.conversation_id)
+  }
+
+  async function toggleSavedMessage(item: MessageRow) {
+    const exists = savedMessageIds.includes(item.id)
+    const result = exists
+      ? await supabase.from('saved_messages').delete().eq('user_id', userId).eq('message_id', item.id)
+      : await supabase.from('saved_messages').insert({ user_id: userId, message_id: item.id })
+    if (result.error) {
+      setError(result.error.message)
+      return
+    }
+    setSavedMessageIds((items) => exists ? items.filter((id) => id !== item.id) : [...items, item.id])
+    setMessage(exists ? 'Removed from Connectly Notes.' : 'Saved to Connectly Notes.')
+    setMessageMenuFor(null)
+  }
+
+  async function loadSavedMessages() {
+    const { data, error: savedError } = await supabase.from('saved_messages')
+      .select('message_id,note,saved_at')
+      .eq('user_id', userId)
+      .order('saved_at', { ascending: false })
+      .limit(100)
+    if (savedError) {
+      setError(savedError.message)
+      return
+    }
+    const rows = (data ?? []) as { message_id: string; note: string | null; saved_at: string }[]
+    if (!rows.length) {
+      setSavedMessages([])
+      setSavedMessagesOpen(true)
+      return
+    }
+    const { data: messagesData, error: messagesError } = await supabase.from('messages')
+      .select('id,conversation_id,sender_id,content,created_at,reply_to_message_id')
+      .in('id', rows.map((row) => row.message_id))
+    if (messagesError) {
+      setError(messagesError.message)
+      return
+    }
+    const byId = new Map(((messagesData ?? []) as MessageRow[]).map((item) => [item.id, item]))
+    setSavedMessages(rows.flatMap((row) => {
+      const item = byId.get(row.message_id)
+      return item ? [{ ...row, message: item }] : []
+    }))
+    setSavedMessagesOpen(true)
+  }
+
+  async function uploadMessageFile(file: File, forcedKind?: 'audio') {
+    if (!activeChatId) return
+    if (file.size <= 0 || file.size > 25 * 1024 * 1024) {
+      setError('Files must be smaller than 25 MB.')
+      return
+    }
+    const mime = file.type || 'application/octet-stream'
+    const kind: MessageAttachmentRow['media_kind'] = forcedKind || (
+      mime.startsWith('image/') ? 'image' :
+      mime.startsWith('video/') ? 'video' :
+      mime.startsWith('audio/') ? 'audio' : 'document'
+    )
+    const allowed = mime.startsWith('image/') || mime.startsWith('video/') || mime.startsWith('audio/')
+      || ['application/pdf','text/plain','application/zip','application/vnd.openxmlformats-officedocument.wordprocessingml.document'].includes(mime)
+    if (!allowed) {
+      setError('Supported files: photos, videos, voice notes, PDF, TXT, ZIP and DOCX.')
+      return
+    }
+    setUploadingMedia(true)
+    clearFeedback()
+    let storagePath = ''
+    let createdMessageId = ''
+    try {
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-100) || 'attachment'
+      storagePath = `${activeChatId}/${userId}/${crypto.randomUUID()}-${safeName}`
+      const { error: uploadError } = await supabase.storage.from('chat-media').upload(storagePath, file, {
+        contentType: mime,
+        upsert: false,
+      })
+      if (uploadError) throw uploadError
+
+      const messageText = kind === 'audio' ? 'Voice message' :
+        kind === 'image' ? 'Photo' : kind === 'video' ? 'Video' : `📎 ${safeName}`
+      const { data: messageRow, error: messageError } = await supabase.from('messages').insert({
+        conversation_id: activeChatId,
+        sender_id: userId,
+        content: messageText,
+        reply_to_message_id: replyingTo?.id ?? null,
+      }).select('id').single()
+      if (messageError) throw messageError
+      createdMessageId = messageRow.id
+
+      const { error: attachmentError } = await supabase.from('message_attachments').insert({
+        message_id: createdMessageId,
+        conversation_id: activeChatId,
+        uploader_id: userId,
+        storage_path: storagePath,
+        original_name: safeName,
+        mime_type: mime,
+        byte_size: file.size,
+        media_kind: kind,
+      })
+      if (attachmentError) throw attachmentError
+
+      setReplyingTo(null)
+      setMediaMenuOpen(false)
+      setMessage('Attachment sent.')
+      await loadChatMessages(activeChatId)
+      await refreshChats()
+    } catch (caught) {
+      if (createdMessageId) {
+        await supabase.from('messages').delete().eq('id', createdMessageId).eq('sender_id', userId)
+      }
+      if (storagePath) {
+        await supabase.storage.from('chat-media').remove([storagePath])
+      }
+      setError(caught instanceof Error ? caught.message : 'The attachment could not be sent.')
+    } finally {
+      setUploadingMedia(false)
+    }
+  }
+
+  async function toggleVoiceRecording() {
+    if (recordingVoice && voiceRecorderRef.current) {
+      voiceRecorderRef.current.stop()
+      setRecordingVoice(false)
+      return
+    }
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setError('Voice recording is not supported by this browser.')
+      return
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const preferred = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' :
+        MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : ''
+      const recorder = new MediaRecorder(stream, preferred ? { mimeType: preferred } : undefined)
+      voiceRecorderRef.current = recorder
+      voiceChunksRef.current = []
+      recorder.ondataavailable = (event) => {
+        if (event.data.size) voiceChunksRef.current.push(event.data)
+      }
+      recorder.onstop = () => {
+        const type = recorder.mimeType || 'audio/webm'
+        const blob = new Blob(voiceChunksRef.current, { type })
+        stream.getTracks().forEach((track) => track.stop())
+        voiceRecorderRef.current = null
+        if (blob.size) {
+          const extension = type.includes('mp4') ? 'm4a' : type.includes('ogg') ? 'ogg' : 'webm'
+          const file = new File([blob], `voice-${Date.now()}.${extension}`, { type })
+          void uploadMessageFile(file, 'audio')
+        }
+      }
+      recorder.start()
+      setRecordingVoice(true)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Microphone permission was not granted.')
+    }
+  }
+
+  async function submitUserReport(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!reportPerson) return
+    const { error: reportError } = await supabase.from('user_reports').insert({
+      reporter_id: userId,
+      reported_user_id: reportPerson.id,
+      reason: reportReason,
+      details: reportDetails.trim() || null,
+      status: 'submitted',
+    })
+    if (reportError) {
+      setError(reportError.message)
+      return
+    }
+    setReportPerson(null)
+    setReportDetails('')
+    setMessage('Thank you. Your report has been submitted for review.')
+  }
+
   async function copyMessage(item: MessageRow) {
     try {
       await navigator.clipboard.writeText(item.content)
@@ -1123,15 +1484,17 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
         filter: `conversation_id=eq.${activeChatId}`,
       }, () => {
         void loadChatMessages(activeChatId)
-        void supabase.from('conversation_user_settings').update({ last_read_at: new Date().toISOString() })
-          .eq('conversation_id', activeChatId).eq('user_id', userId)
+        if (privacySettings.read_receipts) {
+          void supabase.from('conversation_user_settings').update({ last_read_at: new Date().toISOString() })
+            .eq('conversation_id', activeChatId).eq('user_id', userId)
+        }
         void refreshChats()
       })
       .subscribe()
     return () => {
       void supabase.removeChannel(channel)
     }
-  }, [supabase, activeChatId, loadChatMessages, refreshChats])
+  }, [supabase, activeChatId, loadChatMessages, refreshChats, privacySettings.read_receipts])
 
   const navItems: { id: Tab; icon: string; label: string; count?: number }[] = [
     { id: 'chats', icon: '▤', label: 'Chats', count: chats.reduce((n, chat) => n + chat.unreadCount, 0) },
@@ -1158,6 +1521,7 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
   const activeChatPerson = activeChat?.person ?? null
 
   async function markChatRead(conversationId: string) {
+    if (!privacySettings.read_receipts) return
     const current = chatSettings[conversationId]
     const timestamp = new Date().toISOString()
     const row = {
