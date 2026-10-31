@@ -10,7 +10,7 @@ type BlockRow = { blocker_id: string; blocked_id: string; created_at: string; pe
 type ConversationRow = { id: string; title: string | null; is_group: boolean; direct_key: string | null; created_at: string }
 type MessageRow = { id: string; conversation_id: string; sender_id: string; content: string; created_at: string }
 type ChatSummary = { conversationId: string; person: Profile; lastMessage?: string; lastAt?: string }
-type Tab = 'discover'|'friends'|'requests'|'chats'|'profile'
+type Tab = 'discover'|'requests'|'chats'|'profile'
 type Theme = 'black'|'white'|'glass'
 
 const emptyProfile: Profile = { id: '', username: '', full_name: '', avatar_url: null }
@@ -23,6 +23,7 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
   const [theme, setTheme] = useState<Theme>('black')
   const [chatSearch, setChatSearch] = useState('')
   const [newChatOpen, setNewChatOpen] = useState(false)
+  const [selectedPerson, setSelectedPerson] = useState<Profile | null>(null)
   const [profile, setProfile] = useState<Profile>(initialProfile ?? emptyProfile)
   const [incoming, setIncoming] = useState<RequestRow[]>([])
   const [outgoing, setOutgoing] = useState<RequestRow[]>([])
@@ -362,6 +363,38 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
     }
   }
 
+  async function showPersonDetails(person: Profile) {
+    clearFeedback()
+    const { data: friendship, error: friendshipError } = await supabase
+      .from('friend_requests')
+      .select('id')
+      .eq('status', 'accepted')
+      .or(`and(sender_id.eq.${userId},receiver_id.eq.${person.id}),and(sender_id.eq.${person.id},receiver_id.eq.${userId})`)
+      .maybeSingle()
+    if (friendshipError) {
+      setError(friendshipError.message)
+      return
+    }
+    if (!friendship) {
+      setError('This profile is available only to accepted friends.')
+      return
+    }
+
+    const { data: blocks, error: blockError } = await supabase
+      .from('user_blocks')
+      .select('blocker_id,blocked_id')
+      .or(`and(blocker_id.eq.${userId},blocked_id.eq.${person.id}),and(blocker_id.eq.${person.id},blocked_id.eq.${userId})`)
+    if (blockError) {
+      setError(blockError.message)
+      return
+    }
+    if ((blocks ?? []).length) {
+      setError('This profile is unavailable.')
+      return
+    }
+    setSelectedPerson(person)
+  }
+
   async function sendChatMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const content = chatDraft.trim()
@@ -404,7 +437,6 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
 
   const navItems: { id: Tab; icon: string; label: string; count?: number }[] = [
     { id: 'chats', icon: '▤', label: 'Chats' },
-    { id: 'friends', icon: '♡', label: 'Friends' },
     { id: 'requests', icon: '✉', label: 'Requests', count: incoming.length },
     { id: 'discover', icon: '⌕', label: 'Discover' },
     { id: 'profile', icon: '◉', label: 'Profile' },
@@ -416,6 +448,7 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
       || (chat.lastMessage ?? '').toLowerCase().includes(term)
       || chat.person.username.toLowerCase().includes(term)
   })
+  const activeChatPerson = chats.find((chat) => chat.conversationId === activeChatId)?.person ?? null
   async function selectChat(chat: ChatSummary) {
     setActiveChatId(chat.conversationId)
     setChatMessages([])
@@ -447,11 +480,7 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
             <span className="topbar-brand-copy"><strong>Connectly</strong><small>YOUR PRIVATE SOCIAL SPACE</small></span>
           </a>
           <div className="topbar-actions">
-            <div className="theme-picker" role="group" aria-label="Choose appearance">
-              <button type="button" className={`theme-choice ${theme === 'black' ? 'selected' : ''}`} onClick={() => chooseTheme('black')} aria-pressed={theme === 'black'} title="Black theme"><span className="theme-dot theme-dot-black" /><span>Black</span></button>
-              <button type="button" className={`theme-choice ${theme === 'white' ? 'selected' : ''}`} onClick={() => chooseTheme('white')} aria-pressed={theme === 'white'} title="White theme"><span className="theme-dot theme-dot-white" /><span>White</span></button>
-              <button type="button" className={`theme-choice ${theme === 'glass' ? 'selected' : ''}`} onClick={() => chooseTheme('glass')} aria-pressed={theme === 'glass'} title="Liquid Glass theme"><span className="theme-dot theme-dot-glass" /><span>Glass</span></button>
-            </div>
+            
             <span className="topbar-status"><i className="status-dot" /> Secure</span>
             <button type="button" className="topbar-avatar" onClick={() => setTab('profile')} aria-label="Open profile">{initialOf(profile)}</button>
           </div>
@@ -470,16 +499,6 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
             {!results.length && !loading && <div className="empty-state glass-panel"><div className="empty-icon">✧</div><h4>Your next connection is out there.</h4><p>Search a username above to discover someone on Connectly.</p></div>}
             {loading && <div className="empty-state glass-panel"><div className="loader-dot" /><p>Loading your space…</p></div>}
           </div>
-        </section>}
-
-        {tab === 'friends' && <section className="content-stack">
-          <div className="section-heading"><div><p className="eyebrow">YOUR CIRCLE</p><h3>{friends.length} {friends.length === 1 ? 'friend' : 'friends'}</h3></div><button className="button button-subtle" onClick={() => setTab('discover')}>＋ Find people</button></div>
-          <div className="list-panel glass-panel">
-            {friends.map((friend) => <div className="list-row" key={friend.requestId}><div className="avatar">{initialOf(friend.person)}</div><div className="list-person"><strong>{nameOf(friend.person)}</strong><span>@{friend.person.username}</span></div><span className="friend-badge">Friends</span><button className="button button-primary" onClick={() => openChat(friend.person)} disabled={chatBusy}>Message</button><button className="icon-button" title="Remove friend" onClick={() => unfriend(friend)} disabled={busy}>−</button><button className="icon-button danger-icon" title="Block user" onClick={() => blockPerson(friend.person)} disabled={busy}>⊘</button></div>)}
-            {!friends.length && <div className="empty-state"><div className="empty-icon">♡</div><h4>Your circle is ready to grow.</h4><p>Find someone by username and send your first friend request.</p><button className="button button-primary" onClick={() => setTab('discover')}>Discover people</button></div>}
-          </div>
-          <div className="section-heading"><div><p className="eyebrow">PRIVACY</p><h3>Blocked accounts</h3></div></div>
-          <div className="list-panel glass-panel">{blocks.map((block) => <div className="list-row" key={block.blocked_id}><div className="avatar avatar-muted">⊘</div><div className="list-person"><strong>{nameOf(block.person)}</strong><span>{block.person ? `@${block.person.username}` : 'Blocked by you'}</span></div><button className="button button-subtle" onClick={() => unblockPerson(block)} disabled={busy}>Unblock</button></div>)}{!blocks.length && <p className="quiet-empty">You have not blocked anyone.</p>}</div>
         </section>}
 
         {tab === 'requests' && <section className="content-stack">
@@ -528,6 +547,22 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
               </div>}
             </div>
 
+            <section className="inbox-friends-section">
+              <div className="inbox-friends-heading">
+                <div><p className="eyebrow">YOUR CIRCLE</p><h3>Friends <span className="chat-total">{friends.length}</span></h3></div>
+                <button type="button" className="text-button" onClick={() => setTab('discover')}>Find people</button>
+              </div>
+              {friends.length ? <div className="inbox-friends-list">
+                {friends.map((friend) => <article className="inbox-friend-row" key={friend.requestId}>
+                  <span className="inbox-avatar">{friend.person.avatar_url ? <img src={friend.person.avatar_url} alt="" /> : initialOf(friend.person)}</span>
+                  <span className="inbox-friend-copy"><strong>{nameOf(friend.person)}</strong><small>@{friend.person.username}</small></span>
+                  <button type="button" className="button button-primary" onClick={() => void openChat(friend.person)} disabled={chatBusy}>Message</button>
+                  <button type="button" className="icon-button" title="Remove friend" aria-label={`Remove ${nameOf(friend.person)}`} onClick={() => unfriend(friend)} disabled={busy}>−</button>
+                  <button type="button" className="icon-button danger-icon" title="Block friend" aria-label={`Block ${nameOf(friend.person)}`} onClick={() => blockPerson(friend.person)} disabled={busy}>⊘</button>
+                </article>)}
+              </div> : <div className="inbox-friends-empty">Your accepted friends will appear here. <button type="button" className="text-button" onClick={() => setTab('discover')}>Discover people</button></div>}
+            </section>
+
             {newChatOpen && <div className="modal-scrim" role="presentation" onClick={() => setNewChatOpen(false)}>
               <section className="new-chat-modal glass-panel" role="dialog" aria-modal="true" aria-labelledby="new-chat-title" onClick={(event) => event.stopPropagation()}>
                 <div className="modal-heading"><div><p className="eyebrow">START A CONVERSATION</p><h3 id="new-chat-title">New chat</h3></div><button type="button" className="icon-button" onClick={() => setNewChatOpen(false)} aria-label="Close">×</button></div>
@@ -540,10 +575,10 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
             <section className="conversation-screen">
               <header className="conversation-topbar">
                 <button type="button" className="back-to-inbox" onClick={() => { setActiveChatId(''); setChatMessages([]); void refreshChats() }}><span>‹</span> Chats</button>
-                <div className="conversation-person">
-                  <span className="inbox-avatar small">{initialOf(chats.find((chat) => chat.conversationId === activeChatId)?.person)}</span>
-                  <span><strong>{nameOf(chats.find((chat) => chat.conversationId === activeChatId)?.person)}</strong><small>Private conversation</small></span>
-                </div>
+                {activeChatPerson ? <button type="button" className="conversation-person conversation-person-button" onClick={() => void showPersonDetails(activeChatPerson)} aria-label={`View ${nameOf(activeChatPerson)}'s profile`}>
+                  <span className="inbox-avatar small">{activeChatPerson.avatar_url ? <img src={activeChatPerson.avatar_url} alt="" /> : initialOf(activeChatPerson)}</span>
+                  <span><strong>{nameOf(activeChatPerson)}</strong><small>@{activeChatPerson.username} · View profile</small></span>
+                </button> : <div className="conversation-person"><span className="inbox-avatar small">C</span><span><strong>Connectly member</strong><small>Private conversation</small></span></div>}
                 <span className="secure-chip"><i /> Private</span>
               </header>
               <div className="conversation-messages" aria-live="polite">
@@ -561,8 +596,41 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
           </>}
         </section>}
 
+          {selectedPerson && <div className="modal-scrim profile-modal-scrim" role="presentation" onClick={() => setSelectedPerson(null)}>
+            <section className="person-profile-modal glass-panel" role="dialog" aria-modal="true" aria-labelledby="person-profile-title" onClick={(event) => event.stopPropagation()}>
+              <div className="modal-heading"><div><p className="eyebrow">CONNECTLY MEMBER</p><h3 id="person-profile-title">Profile details</h3></div><button type="button" className="icon-button" onClick={() => setSelectedPerson(null)} aria-label="Close profile">×</button></div>
+              <div className="person-profile-identity">
+                <div className="person-profile-photo">
+                  {selectedPerson.avatar_url ? <img src={selectedPerson.avatar_url} alt={`${nameOf(selectedPerson)} profile`} /> : <span>{initialOf(selectedPerson)}</span>}
+                </div>
+                <h4>{nameOf(selectedPerson)}</h4>
+                <p>@{selectedPerson.username}</p>
+                <span className="accepted-friend-label"><i /> Accepted friend</span>
+              </div>
+              <div className="person-profile-fields">
+                <div><small>Full name</small><strong>{selectedPerson.full_name?.trim() || 'Not provided'}</strong></div>
+                <div><small>Username</small><strong>@{selectedPerson.username}</strong></div>
+              </div>
+              <button type="button" className="button button-primary button-wide" onClick={() => setSelectedPerson(null)}>Close</button>
+            </section>
+          </div>}
+
         {tab === 'profile' && <section className="content-stack profile-layout">
           <div className="profile-hero glass-panel"><div className="profile-avatar">{initialOf(profile)}</div><div><p className="eyebrow">YOUR CONNECTLY ID</p><h3>{nameOf(profile)}</h3><p className="muted">@{profile.username}</p></div><span className="profile-status"><i /> ACTIVE</span></div>
+          <div className="form-panel glass-panel appearance-panel">
+            <div className="section-heading"><div><p className="eyebrow">MAKE IT YOURS</p><h3>Appearance</h3><p className="muted small-text">Choose how Connectly looks on this device.</p></div></div>
+            <div className="profile-theme-options" role="group" aria-label="Choose appearance">
+              <button type="button" className={`profile-theme-option ${theme === 'black' ? 'selected' : ''}`} onClick={() => chooseTheme('black')} aria-pressed={theme === 'black'}>
+                <span className="theme-preview theme-preview-black" /><span><strong>Black</strong><small>Minimal dark</small></span>{theme === 'black' && <b>✓</b>}
+              </button>
+              <button type="button" className={`profile-theme-option ${theme === 'white' ? 'selected' : ''}`} onClick={() => chooseTheme('white')} aria-pressed={theme === 'white'}>
+                <span className="theme-preview theme-preview-white" /><span><strong>White</strong><small>Clean light</small></span>{theme === 'white' && <b>✓</b>}
+              </button>
+              <button type="button" className={`profile-theme-option ${theme === 'glass' ? 'selected' : ''}`} onClick={() => chooseTheme('glass')} aria-pressed={theme === 'glass'}>
+                <span className="theme-preview theme-preview-glass" /><span><strong>Liquid Glass</strong><small>Frosted surfaces</small></span>{theme === 'glass' && <b>✓</b>}
+              </button>
+            </div>
+          </div>
           <div className="form-panel glass-panel"><div className="section-heading"><div><p className="eyebrow">PERSONAL DETAILS</p><h3>Edit profile</h3></div></div>
             <form className="stack-form" onSubmit={saveProfile}><label className="field-label">Full name<input value={fullName} onChange={(e) => setFullName(e.target.value)} maxLength={80} placeholder="Your name" /></label><label className="field-label">Username<div className="input-prefix"><span>@</span><input value={username} onChange={(e) => setUsername(e.target.value)} maxLength={40} placeholder="yourname" /></div></label><label className="field-label">Email address<input value={email} disabled /></label><p className="muted small-text">Username: 3–40 characters, lowercase letters, numbers, dots and underscores.</p><button className="button button-primary" type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save changes'}</button></form>
           </div>
