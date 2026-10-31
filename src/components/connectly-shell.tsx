@@ -9,6 +9,11 @@ type FriendRow = { requestId: string; person: Profile }
 type BlockRow = { blocker_id: string; blocked_id: string; created_at: string; person?: Profile }
 type ConversationRow = { id: string; title: string | null; is_group: boolean; direct_key: string | null; created_at: string }
 type MessageRow = { id: string; conversation_id: string; sender_id: string; content: string; created_at: string; reply_to_message_id: string | null }
+type MessageAttachmentRow = { id: string; message_id: string; conversation_id: string; uploader_id: string; storage_path: string; original_name: string; mime_type: string; byte_size: number; media_kind: 'image'|'video'|'audio'|'document'; signed_url?: string }
+type MessageReactionRow = { message_id: string; user_id: string; emoji: string; created_at: string }
+type SavedMessageRow = { message_id: string; note: string | null; saved_at: string; message: MessageRow }
+type PrivacySettings = { user_id: string; allow_friend_requests: boolean; discoverable: boolean; read_receipts: boolean }
+type QrMode = 'show'|'scan'|null
 type ChatSummary = {
   conversationId: string
   person: Profile | null
@@ -77,7 +82,36 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
   const [messageMenuFor, setMessageMenuFor] = useState<string | null>(null)
   const [replyingTo, setReplyingTo] = useState<MessageRow | null>(null)
   const [securityInfoOpen, setSecurityInfoOpen] = useState(false)
+  const [messageAttachments, setMessageAttachments] = useState<MessageAttachmentRow[]>([])
+  const [messageReactions, setMessageReactions] = useState<MessageReactionRow[]>([])
+  const [savedMessageIds, setSavedMessageIds] = useState<string[]>([])
+  const [savedMessagesOpen, setSavedMessagesOpen] = useState(false)
+  const [savedMessages, setSavedMessages] = useState<SavedMessageRow[]>([])
+  const [reactionMenuFor, setReactionMenuFor] = useState<string | null>(null)
+  const [mediaMenuOpen, setMediaMenuOpen] = useState(false)
+  const [uploadingMedia, setUploadingMedia] = useState(false)
+  const [recordingVoice, setRecordingVoice] = useState(false)
+  const [privacySettings, setPrivacySettings] = useState<PrivacySettings>({
+    user_id: userId, allow_friend_requests: true, discoverable: true, read_receipts: true,
+  })
+  const [qrMode, setQrMode] = useState<QrMode>(null)
+  const [qrSvg, setQrSvg] = useState('')
+  const [qrToken, setQrToken] = useState('')
+  const [qrExpiresAt, setQrExpiresAt] = useState('')
+  const [qrInput, setQrInput] = useState('')
+  const [qrBusy, setQrBusy] = useState(false)
+  const [qrCameraActive, setQrCameraActive] = useState(false)
+  const [reportPerson, setReportPerson] = useState<Profile | null>(null)
+  const [reportReason, setReportReason] = useState<'spam'|'harassment'|'impersonation'|'inappropriate_content'|'other'>('spam')
+  const [reportDetails, setReportDetails] = useState('')
   const searchInputRef = useRef<HTMLInputElement | null>(null)
+  const attachmentInputRef = useRef<HTMLInputElement | null>(null)
+  const documentInputRef = useRef<HTMLInputElement | null>(null)
+  const cameraInputRef = useRef<HTMLInputElement | null>(null)
+  const qrScanVideoRef = useRef<HTMLVideoElement | null>(null)
+  const voiceRecorderRef = useRef<MediaRecorder | null>(null)
+  const voiceChunksRef = useRef<Blob[]>([])
+  const qrCameraStreamRef = useRef<MediaStream | null>(null)
   const [selectedPerson, setSelectedPerson] = useState<Profile | null>(null)
   const [profile, setProfile] = useState<Profile>(initialProfile ?? emptyProfile)
   const [incoming, setIncoming] = useState<RequestRow[]>([])
@@ -212,11 +246,45 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
     if (loadError) {
       setError(loadError.message)
       setChatMessages([])
+      setMessageAttachments([])
+      setMessageReactions([])
+      setSavedMessageIds([])
     } else {
-      setChatMessages((data ?? []) as MessageRow[])
+      const rows = (data ?? []) as MessageRow[]
+      setChatMessages(rows)
+      const ids = rows.map((row) => row.id)
+      if (!ids.length) {
+        setMessageAttachments([])
+        setMessageReactions([])
+        setSavedMessageIds([])
+      } else {
+        const [attachmentsResult, reactionsResult, savedResult] = await Promise.all([
+          supabase.from('message_attachments')
+            .select('id,message_id,conversation_id,uploader_id,storage_path,original_name,mime_type,byte_size,media_kind')
+            .in('message_id', ids),
+          supabase.from('message_reactions')
+            .select('message_id,user_id,emoji,created_at')
+            .in('message_id', ids),
+          supabase.from('saved_messages')
+            .select('message_id')
+            .eq('user_id', userId)
+            .in('message_id', ids),
+        ])
+        if (attachmentsResult.error) setError(attachmentsResult.error.message)
+        if (reactionsResult.error) setError(reactionsResult.error.message)
+        if (savedResult.error) setError(savedResult.error.message)
+        const attachmentRows = (attachmentsResult.data ?? []) as MessageAttachmentRow[]
+        const withUrls = await Promise.all(attachmentRows.map(async (attachment) => {
+          const { data: signed } = await supabase.storage.from('chat-media').createSignedUrl(attachment.storage_path, 3600)
+          return { ...attachment, signed_url: signed?.signedUrl ?? '' }
+        }))
+        setMessageAttachments(withUrls)
+        setMessageReactions((reactionsResult.data ?? []) as MessageReactionRow[])
+        setSavedMessageIds(((savedResult.data ?? []) as { message_id: string }[]).map((row) => row.message_id))
+      }
     }
     setChatLoading(false)
-  }, [supabase])
+  }, [supabase, userId])
 
   const refresh = useCallback(async () => {
     setLoading(true)
