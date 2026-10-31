@@ -8,7 +8,7 @@ type RequestRow = { id: string; sender_id: string; receiver_id: string; status: 
 type FriendRow = { requestId: string; person: Profile }
 type BlockRow = { blocker_id: string; blocked_id: string; created_at: string; person?: Profile }
 type ConversationRow = { id: string; title: string | null; is_group: boolean; direct_key: string | null; created_at: string }
-type MessageRow = { id: string; conversation_id: string; sender_id: string; content: string; created_at: string }
+type MessageRow = { id: string; conversation_id: string; sender_id: string; content: string; created_at: string; reply_to_message_id: string | null }
 type ChatSummary = {
   conversationId: string
   person: Profile | null
@@ -74,6 +74,9 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
   const [chatMenuFor, setChatMenuFor] = useState<string | null>(null)
   const [emojiOpen, setEmojiOpen] = useState(false)
   const [moreMenuOpen, setMoreMenuOpen] = useState(false)
+  const [messageMenuFor, setMessageMenuFor] = useState<string | null>(null)
+  const [replyingTo, setReplyingTo] = useState<MessageRow | null>(null)
+  const [securityInfoOpen, setSecurityInfoOpen] = useState(false)
   const searchInputRef = useRef<HTMLInputElement | null>(null)
   const [selectedPerson, setSelectedPerson] = useState<Profile | null>(null)
   const [profile, setProfile] = useState<Profile>(initialProfile ?? emptyProfile)
@@ -203,7 +206,7 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
     setChatLoading(true)
     const { data, error: loadError } = await supabase
       .from('messages')
-      .select('id,conversation_id,sender_id,content,created_at')
+      .select('id,conversation_id,sender_id,content,created_at,reply_to_message_id')
       .eq('conversation_id', conversationId)
       .order('created_at', { ascending: true })
       .limit(100)
@@ -994,6 +997,26 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
     }
   }, [supabase, userId])
 
+  async function copyMessage(item: MessageRow) {
+    try {
+      await navigator.clipboard.writeText(item.content)
+      setMessage('Message copied.')
+    } catch {
+      setError('Copy is unavailable in this browser. Long-press the message text to copy it.')
+    }
+    setMessageMenuFor(null)
+  }
+
+  async function deleteOwnMessage(item: MessageRow) {
+    if (item.sender_id !== userId) return
+    const { error: deleteError } = await supabase.from('messages').delete().eq('id', item.id).eq('sender_id', userId)
+    if (deleteError) { setError(deleteError.message); return }
+    setMessageMenuFor(null)
+    await loadChatMessages(item.conversation_id)
+    await refreshChats()
+    setMessage('Message deleted for everyone in this conversation.')
+  }
+
   async function sendChatMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const content = chatDraft.trim()
@@ -1004,11 +1027,14 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
       conversation_id: activeChatId,
       sender_id: userId,
       content,
+      reply_to_message_id: replyingTo?.id ?? null,
     })
     if (sendError) {
       setError(sendError.message)
     } else {
       setChatDraft('')
+      setReplyingTo(null)
+      setMessageMenuFor(null)
       await loadChatMessages(activeChatId)
       await refreshChats()
     }
@@ -1079,6 +1105,48 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
     setChatSettings((items) => ({ ...items, [conversationId]: { ...row } }))
   }
 
+  async function markChatUnread(chat: ChatSummary) {
+    const current = chatSettings[chat.conversationId]
+    const latestTimestamp = chat.lastAt ? new Date(new Date(chat.lastAt).getTime() - 1).toISOString() : null
+    if (!latestTimestamp) {
+      setError('This conversation has no messages to mark unread yet.')
+      setChatMenuFor(null)
+      return
+    }
+    const row = {
+      conversation_id: chat.conversationId,
+      user_id: userId,
+      is_favorite: current?.is_favorite ?? false,
+      is_muted: current?.is_muted ?? false,
+      last_read_at: latestTimestamp,
+    }
+    const { error: saveError } = await supabase.from('conversation_user_settings')
+      .upsert(row, { onConflict: 'conversation_id,user_id' })
+    if (saveError) { setError(saveError.message); return }
+    setChatSettings((items) => ({ ...items, [chat.conversationId]: { ...row } }))
+    setChatMenuFor(null)
+    await refreshChats()
+  }
+
+  async function markAllChatsRead() {
+    const timestamp = new Date().toISOString()
+    const rows = chats.map((chat) => ({
+      conversation_id: chat.conversationId,
+      user_id: userId,
+      is_favorite: chatSettings[chat.conversationId]?.is_favorite ?? false,
+      is_muted: chatSettings[chat.conversationId]?.is_muted ?? false,
+      last_read_at: timestamp,
+    }))
+    if (!rows.length) { setMoreMenuOpen(false); return }
+    const { error: saveError } = await supabase.from('conversation_user_settings')
+      .upsert(rows, { onConflict: 'conversation_id,user_id' })
+    if (saveError) { setError(saveError.message); return }
+    setChatSettings((items) => ({ ...items, ...Object.fromEntries(rows.map((row) => [row.conversation_id, row])) }))
+    setMoreMenuOpen(false)
+    await refreshChats()
+    setMessage('All conversations marked as read.')
+  }
+
   async function setConversationFlag(chat: ChatSummary, field: 'is_favorite'|'is_muted') {
     const current = chatSettings[chat.conversationId]
     const row = {
@@ -1101,6 +1169,8 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
     setChatMessages([])
     setEmojiOpen(false)
     setChatMenuFor(null)
+    setMessageMenuFor(null)
+    setReplyingTo(null)
     clearFeedback()
     await markChatRead(chat.conversationId)
     await loadChatMessages(chat.conversationId)
@@ -1133,7 +1203,9 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
             <button type="button" className="topbar-icon-button" aria-label="Search chats" title="Search chats" onClick={() => { setTab('chats'); setShowInboxSearch((value) => !value) }}>⌕</button>
             <button type="button" className="topbar-icon-button" aria-label="More options" title="More options" onClick={() => setMoreMenuOpen((value) => !value)}>⋮</button>
             {moreMenuOpen && <div className="topbar-more-menu">
-              <button type="button" onClick={() => { setNewChatOpen(true); setMoreMenuOpen(false) }}>New chat</button>
+              <button type="button" onClick={() => { setNewChatOpen(true); setNewGroupMode(false); setMoreMenuOpen(false) }}>New chat</button>
+              <button type="button" onClick={() => { setNewChatOpen(true); setNewGroupMode(true); setMoreMenuOpen(false) }}>New group</button>
+              <button type="button" onClick={() => void markAllChatsRead()}>Mark all as read</button>
               <button type="button" onClick={() => { setTab('profile'); setMoreMenuOpen(false) }}>Settings & profile</button>
               <button type="button" onClick={() => { setMoreMenuOpen(false); void signOut() }}>Sign out</button>
             </div>}
@@ -1198,6 +1270,7 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
                   {chatMenuFor === chat.conversationId && <div className="chat-row-menu">
                     <button type="button" onClick={() => void setConversationFlag(chat, 'is_favorite')}>{chat.isFavorite ? 'Remove favorite' : 'Add to favorites'}</button>
                     <button type="button" onClick={() => void setConversationFlag(chat, 'is_muted')}>{chat.isMuted ? 'Unmute chat' : 'Mute chat'}</button>
+                    <button type="button" onClick={() => void (chat.unreadCount > 0 ? markChatRead(chat.conversationId) : markChatUnread(chat))}>{chat.unreadCount > 0 ? 'Mark as read' : 'Mark as unread'}</button>
                     <button type="button" onClick={() => { setChatMenuFor(null); void selectChat(chat) }}>Open chat</button>
                   </div>}
                 </div>
