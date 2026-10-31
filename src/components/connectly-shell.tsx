@@ -35,6 +35,29 @@ type CallSignalPayload = { callId: string; from: string; to: string; kind: 'answ
 const emptyProfile: Profile = { id: '', username: '', full_name: '', avatar_url: null }
 const nameOf = (p?: Profile | null) => p?.full_name?.trim() || (p?.username ? `@${p.username}` : 'Connectly member')
 const initialOf = (p?: Profile | null) => nameOf(p).replace(/^@/, '').slice(0, 1).toUpperCase() || 'C'
+const formatChatTime = (value?: string) => {
+  if (!value) return ''
+  const date = new Date(value)
+  const today = new Date()
+  const yesterday = new Date()
+  yesterday.setDate(today.getDate() - 1)
+  const sameDay = (a: Date, b: Date) => a.getFullYear() === b.getFullYear()
+    && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+  if (sameDay(date, today)) return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  if (sameDay(date, yesterday)) return 'Yesterday'
+  return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
+}
+const formatMessageDay = (value: string) => {
+  const date = new Date(value)
+  const today = new Date()
+  const yesterday = new Date()
+  yesterday.setDate(today.getDate() - 1)
+  const sameDay = (a: Date, b: Date) => a.getFullYear() === b.getFullYear()
+    && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+  if (sameDay(date, today)) return 'Today'
+  if (sameDay(date, yesterday)) return 'Yesterday'
+  return date.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })
+}
 
 export function ConnectlyShell({ userId, email, initialProfile }: { userId: string; email: string; initialProfile: Profile }) {
   const supabase = useMemo(() => createClient(), [])
@@ -1173,28 +1196,62 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
               </details>
             </section>
           </> : <>
-            <section className="conversation-screen">
-              <header className="conversation-topbar">
-                <button type="button" className="back-to-inbox" onClick={() => { setActiveChatId(''); setChatMessages([]); void refreshChats() }}><span>‹</span> Chats</button>
-                {activeChatPerson ? <button type="button" className="conversation-person conversation-person-button" onClick={() => void showPersonDetails(activeChatPerson)} aria-label={`View ${nameOf(activeChatPerson)}'s profile`}>
-                  <span className="inbox-avatar small">{activeChatPerson.avatar_url ? <img src={activeChatPerson.avatar_url} alt="" /> : initialOf(activeChatPerson)}</span>
-                  <span><strong>{nameOf(activeChatPerson)}</strong><small>@{activeChatPerson.username} · View profile</small></span>
-                </button> : <div className="conversation-person"><span className="inbox-avatar small">C</span><span><strong>Connectly member</strong><small>Private conversation</small></span></div>}
-                <span className="secure-chip"><i /> Private</span>
+            <section className="conversation-screen whatsapp-conversation">
+              <header className="conversation-topbar whatsapp-conversation-topbar">
+                <button type="button" className="back-to-inbox" aria-label="Back to chats" onClick={() => { setActiveChatId(''); setChatMessages([]); void refreshChats() }}><span>‹</span></button>
+                {activeChat ? <button type="button" className="conversation-person conversation-person-button" onClick={() => activeChatPerson && void showPersonDetails(activeChatPerson)} aria-label={activeChatPerson ? `View ${nameOf(activeChatPerson)}'s profile` : 'Group details'}>
+                  <span className="inbox-avatar small">
+                    {activeChatPerson?.avatar_url ? <img src={activeChatPerson.avatar_url} alt="" /> : activeChat?.isGroup ? '♧' : initialOf(activeChatPerson)}
+                  </span>
+                  <span><strong>{activeChat.isGroup ? (activeChat.title || 'Group chat') : nameOf(activeChatPerson)}</strong><small>{activeChat.isGroup ? `${activeChat.memberCount} members` : `@${activeChatPerson?.username} · Connectly friend`}</small></span>
+                </button> : <div className="conversation-person"><span className="inbox-avatar small">C</span><span><strong>Connectly chat</strong><small>Private conversation</small></span></div>}
+                <div className="conversation-actions">
+                  {activeChatPerson && <>
+                    <button type="button" className="conversation-action-button" title="Video call" aria-label="Video call" disabled={!!callState} onClick={() => void startCall(activeChatPerson, 'video')}>▣</button>
+                    <button type="button" className="conversation-action-button" title="Audio call" aria-label="Audio call" disabled={!!callState} onClick={() => void startCall(activeChatPerson, 'audio')}>☎</button>
+                  </>}
+                  <button type="button" className="conversation-action-button" title="More chat options" aria-label="More chat options" onClick={() => setChatMenuFor(chatMenuFor === activeChatId ? null : activeChatId)}>⋮</button>
+                  {chatMenuFor === activeChatId && <div className="conversation-more-menu">
+                    {activeChatPerson && <button type="button" onClick={() => { setChatMenuFor(null); void showPersonDetails(activeChatPerson) }}>Contact info</button>}
+                    <button type="button" onClick={() => { if (activeChat) void setConversationFlag(activeChat, 'is_favorite'); setChatMenuFor(null) }}>{activeChat?.isFavorite ? 'Remove favorite' : 'Add to favorites'}</button>
+                    <button type="button" onClick={() => { if (activeChat) void setConversationFlag(activeChat, 'is_muted'); setChatMenuFor(null) }}>{activeChat?.isMuted ? 'Unmute chat' : 'Mute notifications'}</button>
+                  </div>}
+                </div>
               </header>
-              <div className="conversation-messages" aria-live="polite">
-                {chatLoading && !chatMessages.length && <p className="quiet-empty">Loading messages…</p>}
-                {!chatLoading && !chatMessages.length && <div className="conversation-empty"><span>✦</span><strong>Say hello.</strong><p>Your conversation is private to its two members.</p></div>}
-                {chatMessages.map((item) => <div key={item.id} className={`chat-message-row ${item.sender_id === userId ? 'mine' : 'theirs'}`}>
-                  <div className="chat-bubble"><p>{item.content}</p><time>{new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time></div>
-                </div>)}
+
+              <div className="chat-encryption-notice" role="note">
+                <span aria-hidden="true">ⓘ</span>
+                <div><strong>End-to-end encryption is not enabled yet.</strong><small>Messages are protected in transit, but Connectly's current message records are readable by the service. Avoid sending highly sensitive information here.</small></div>
               </div>
-              <form className="chat-compose" onSubmit={sendChatMessage}>
-                <input value={chatDraft} onChange={(event) => setChatDraft(event.target.value)} maxLength={5000} placeholder="Write a message…" aria-label="Message" />
-                <button className="button button-primary" type="submit" disabled={chatBusy || !chatDraft.trim()}>{chatBusy ? 'Sending…' : 'Send'}</button>
+
+              <div className="conversation-messages whatsapp-message-wall" aria-live="polite">
+                {chatLoading && !chatMessages.length && <p className="quiet-empty">Loading messages…</p>}
+                {!chatLoading && !chatMessages.length && <div className="conversation-empty"><span>✦</span><strong>Say hello.</strong><p>Your conversation starts here.</p></div>}
+                {chatMessages.map((item, index) => {
+                  const previous = chatMessages[index - 1]
+                  const isNewDay = !previous || new Date(previous.created_at).toDateString() !== new Date(item.created_at).toDateString()
+                  return <div key={item.id}>
+                    {isNewDay && <div className="chat-day-divider"><span>{formatMessageDay(item.created_at)}</span></div>}
+                    <div className={`chat-message-row ${item.sender_id === userId ? 'mine' : 'theirs'}`}>
+                      <div className="chat-bubble">
+                        <p>{item.content}</p>
+                        <time>{new Date(item.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}{item.sender_id === userId && <span className="message-sent-check" aria-label="Sent"> ✓</span>}</time>
+                      </div>
+                    </div>
+                  </div>
+                })}
+              </div>
+
+              {emojiOpen && <div className="chat-emoji-picker" role="group" aria-label="Choose an emoji">
+                {['😀','😂','🥰','😊','😍','👍','🙏','❤️','🎉','🔥','👏','🤗','😎','✨','💯','👋'].map((emoji) => <button type="button" key={emoji} onClick={() => setChatDraft((value) => value + emoji)}>{emoji}</button>)}
+              </div>}
+              <form className="chat-compose whatsapp-composer" onSubmit={sendChatMessage}>
+                <button type="button" className={`composer-action-button ${emojiOpen ? 'active' : ''}`} aria-label="Emoji" title="Emoji" onClick={() => setEmojiOpen((value) => !value)}>☺</button>
+                <input value={chatDraft} onChange={(event) => setChatDraft(event.target.value)} maxLength={5000} placeholder="Message" aria-label="Message" />
+                <button type="button" className="composer-action-button" aria-label="Attachments" title="Photo and file sharing is coming next" disabled>⌁</button>
+                <button type="submit" className="composer-send-button" aria-label="Send message" title="Send message" disabled={chatBusy || !chatDraft.trim()}>{chatBusy ? '…' : '➤'}</button>
               </form>
             </section>
-          </>}
         </section>}
 
           {selectedPerson && <div className="modal-scrim profile-modal-scrim" role="presentation" onClick={() => setSelectedPerson(null)}>
