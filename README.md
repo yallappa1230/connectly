@@ -61,3 +61,15 @@ Not included: realtime messaging, group chats, QR friend connection, voice/video
 After Netlify assigns a public `.netlify.app` domain, add that exact domain to Supabase Authentication → URL Configuration as the Site URL and an allowed redirect URL (`https://YOUR-SITE.netlify.app/**`). Keep localhost and your Codespaces URL during development.
 
 Do not use a Supabase secret/service-role key in the browser. Before inviting users, apply and verify `supabase/phase-1-security.sql` in the Connectly Supabase SQL Editor, then test with two accounts. This repo's friend/RLS setup is not a substitute for a full security review.
+
+## Private one-to-one messaging
+
+The Phase 1 interface now includes a Chats tab. An accepted friend can be messaged from the Friends list. The application opens or reuses a private conversation, sends messages to `public.messages`, loads recent messages, and listens for new message inserts through Supabase Realtime.
+
+Database requirements already applied to the live Connectly project:
+- `conversations.direct_key` plus a unique partial index to keep one direct conversation per unordered pair.
+- Conversation membership RLS that allows the creator and an accepted, unblocked friend only.
+- `public.messages` remains protected by its member-only SELECT and sender-only INSERT policies.
+- `public.messages` is included in the `supabase_realtime` publication.
+
+To test, use two separate, email-confirmed accounts. Accept a friend request, open Friends, choose **Message**, send a message, then sign in as the other friend to verify receipt. Do not use a service-role key in the app.
