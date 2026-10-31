@@ -72,7 +72,25 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
   async function runAction(action: () => Promise<void>, success: string) {
     setBusy(true); clearFeedback()
     try { await action(); setMessage(success); await refresh() }
-    catch (e) { setError(e instanceof Error ? e.message : 'Something went wrong. Please try again.') }
+    catch (e) {
+      if (e && typeof e === 'object' && 'code' in e) {
+        const code = String((e as { code?: unknown }).code ?? '')
+        if (code === '42501') {
+          setError('Supabase denied this action. Please sign out and sign in again, then retry.')
+        } else if (code === '23505') {
+          setError('A pending friend request or friendship already exists for this account.')
+        } else if (code === '23503') {
+          setError('That account is no longer available. Refresh the page and try again.')
+        } else {
+          const message = 'message' in e ? String((e as { message?: unknown }).message ?? '') : ''
+          setError(message || 'Something went wrong. Please try again.')
+        }
+      } else if (e instanceof Error) {
+        setError(e.message)
+      } else {
+        setError('Something went wrong. Please try again.')
+      }
+    }
     finally { setBusy(false) }
   }
 
