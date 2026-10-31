@@ -28,7 +28,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ]
     },
@@ -43,12 +45,16 @@
       "target": [
         {
           "target": "deb",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "category": "Network;InstantMessaging",
       "synopsis": "Connectly messaging app",
       "maintainer": "Connectly"
     }
-  }
+  },
+  "homepage": "https://connectly-gamma-lyart.vercel.app",
+  "author": "Connectly"
 }
