@@ -10,7 +10,7 @@ type BlockRow = { blocker_id: string; blocked_id: string; created_at: string; pe
 type ConversationRow = { id: string; title: string | null; is_group: boolean; direct_key: string | null; created_at: string }
 type MessageRow = { id: string; conversation_id: string; sender_id: string; content: string; created_at: string }
 type ChatSummary = { conversationId: string; person: Profile; lastMessage?: string; lastAt?: string }
-type Tab = 'discover'|'chats'|'profile'
+type Tab = 'chats'|'profile'
 type Theme = 'black'|'white'|'glass'
 type CallMode = 'audio'|'video'
 type CallPhase = 'incoming'|'calling'|'connecting'|'active'
@@ -914,8 +914,7 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
   }, [supabase, activeChatId, loadChatMessages, refreshChats])
 
   const navItems: { id: Tab; icon: string; label: string; count?: number }[] = [
-    { id: 'chats', icon: '▤', label: 'Chats' },
-    { id: 'discover', icon: '⌕', label: 'People', count: incoming.length },
+    { id: 'chats', icon: '▤', label: 'Chats', count: incoming.length },
     { id: 'profile', icon: '◉', label: 'Profile' },
   ]
   const firstName = profile.full_name?.trim().split(/\s+/)[0] || profile.username || 'there'
@@ -964,32 +963,6 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
         </header>
         {(message || error) && <div className={`global-feedback ${error ? 'feedback-error' : 'feedback-success'}`} role="status">{error || message}<button onClick={clearFeedback} aria-label="Dismiss message">×</button></div>}
 
-        {tab === 'discover' && <section className="content-stack">
-          <div className="welcome-panel glass-panel"><div className="welcome-copy"><p className="eyebrow">A LITTLE CLOSER, EVERY DAY</p><h3>Good connections<br /><span>start with hello.</span></h3><p>Search by username and invite the people you want in your circle.</p></div><div className="welcome-orbit"><div className="orbit-core">C</div><span className="orbit-dot orbit-dot-one">✦</span><span className="orbit-dot orbit-dot-two">♡</span><span className="orbit-dot orbit-dot-three">✧</span></div></div>
-          <div className="section-heading"><div><p className="eyebrow">DISCOVER</p><h3>Find friends</h3></div><span className="muted small-text">Search public usernames</span></div>
-          <section className="people-requests-section">
-            <div className="section-heading"><div><p className="eyebrow">YOUR INBOX</p><h3>Received requests <span className="heading-count">{incoming.length}</span></h3></div></div>
-            <div className="list-panel glass-panel">
-              {incoming.map((request) => <div className="list-row request-row" key={request.id}>
-                <div className="avatar">{request.person?.avatar_url ? <img src={request.person.avatar_url} alt="" /> : initialOf(request.person)}</div>
-                <div className="list-person"><strong>{nameOf(request.person)}</strong><span>@{request.person?.username}</span></div>
-                <button className="button button-primary" onClick={() => respond(request, 'accepted')} disabled={busy}>Accept</button>
-                <button className="button button-subtle" onClick={() => respond(request, 'declined')} disabled={busy}>Decline</button>
-              </div>)}
-              {!incoming.length && <div className="quiet-empty">No received requests right now.</div>}
-            </div>
-          </section>
-          <form className="search-bar glass-panel" onSubmit={searchPeople}><span className="search-symbol">⌕</span><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search username…" aria-label="Search username" /><button className="button button-primary" type="submit" disabled={busy}>{busy ? 'Searching…' : 'Search'}</button></form>
-          <div className="people-grid">
-            {results.map((person) => <article className="person-card glass-panel" key={person.id}>
-              <div className="person-card-top"><div className="avatar">{initialOf(person)}</div><span className="online-pill"><i /> CONNECTLY</span></div><h4>{nameOf(person)}</h4><p className="muted">@{person.username}</p>
-              <div className="person-actions"><button className="button button-primary" onClick={() => sendRequest(person)} disabled={busy}>＋ Add friend</button><button className="icon-button" title="Block user" onClick={() => blockPerson(person)} disabled={busy}>⊘</button></div>
-            </article>)}
-            {!results.length && !loading && <div className="empty-state glass-panel"><div className="empty-icon">✧</div><h4>Your next connection is out there.</h4><p>Search a username above to discover someone on Connectly.</p></div>}
-            {loading && <div className="empty-state glass-panel"><div className="loader-dot" /><p>Loading your space…</p></div>}
-          </div>
-        </section>}
-
         {tab === 'chats' && <section className="inbox-layout">
           {!activeChatId ? <>
             <section className="inbox-welcome">
@@ -1030,7 +1003,7 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
             <section className="inbox-friends-section">
               <div className="inbox-friends-heading">
                 <div><p className="eyebrow">YOUR CIRCLE</p><h3>Friends <span className="chat-total">{friends.length}</span></h3></div>
-                <button type="button" className="text-button" onClick={() => setTab('discover')}>Find people</button>
+                <span className="small-text muted">Accepted connections</span>
               </div>
               {friends.length ? <div className="inbox-friends-list">
                 {friends.map((friend) => <button type="button" className="inbox-friend-row inbox-friend-profile-button" key={friend.requestId} onClick={() => void showPersonDetails(friend.person)} aria-label={`Open ${nameOf(friend.person)} profile`}>
@@ -1038,7 +1011,43 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
                   <span className="inbox-friend-copy"><strong>{nameOf(friend.person)}</strong><small>@{friend.person.username}</small></span>
                   <span className="friend-profile-hint">View profile ›</span>
                 </button>)}
-              </div> : <div className="inbox-friends-empty">Your accepted friends will appear here. <button type="button" className="text-button" onClick={() => setTab('discover')}>Discover people</button></div>}
+              </div> : <div className="inbox-friends-empty">Your accepted friends will appear here.</div>}
+            </section>
+
+            <section className="inbox-people-tools">
+              <section className="inbox-requests-inline">
+                <div className="inbox-friends-heading">
+                  <div><p className="eyebrow">YOUR INBOX</p><h3>Received requests <span className="chat-total">{incoming.length}</span></h3></div>
+                </div>
+                {incoming.length ? <div className="inbox-friends-list">
+                  {incoming.map((request) => <article className="inbox-friend-row inbox-request-row" key={request.id}>
+                    <span className="inbox-avatar">{request.person?.avatar_url ? <img src={request.person.avatar_url} alt="" /> : initialOf(request.person)}</span>
+                    <span className="inbox-friend-copy"><strong>{nameOf(request.person)}</strong><small>@{request.person?.username}</small></span>
+                    <button type="button" className="button button-primary" onClick={() => respond(request, 'accepted')} disabled={busy}>Accept</button>
+                    <button type="button" className="button button-subtle" onClick={() => respond(request, 'declined')} disabled={busy}>Decline</button>
+                  </article>)}
+                </div> : <p className="inbox-people-empty">No received requests right now.</p>}
+              </section>
+
+              <section className="inbox-discover-inline">
+                <div className="inbox-friends-heading">
+                  <div><p className="eyebrow">GROW YOUR CIRCLE</p><h3>Find friends</h3></div>
+                  <span className="small-text muted">Search usernames</span>
+                </div>
+                <form className="search-bar glass-panel" onSubmit={searchPeople}>
+                  <span className="search-symbol">⌕</span>
+                  <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search username…" aria-label="Search username" />
+                  <button className="button button-primary" type="submit" disabled={busy}>{busy ? 'Searching…' : 'Search'}</button>
+                </form>
+                {results.length ? <div className="inbox-friends-list inbox-search-results">
+                  {results.map((person) => <article className="inbox-friend-row" key={person.id}>
+                    <span className="inbox-avatar">{person.avatar_url ? <img src={person.avatar_url} alt="" /> : initialOf(person)}</span>
+                    <span className="inbox-friend-copy"><strong>{nameOf(person)}</strong><small>@{person.username}</small></span>
+                    <button type="button" className="button button-primary" onClick={() => void sendRequest(person)} disabled={busy}>Add friend</button>
+                    <button type="button" className="icon-button danger-icon" aria-label={`Block ${nameOf(person)}`} title="Block" onClick={() => void blockPerson(person)} disabled={busy}>⊘</button>
+                  </article>)}
+                </div> : <p className="inbox-people-empty">{query.trim().length >= 2 ? 'No matching people found.' : 'Search by username to find people on Connectly.'}</p>}
+              </section>
             </section>
 
           </> : <>
