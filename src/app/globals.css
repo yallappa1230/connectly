@@ -2438,3 +2438,40 @@ body:has(.app-shell[data-theme="glass"]) {
   .chat-attachment-preview img,
   .chat-attachment-preview video { max-width: 245px; max-height: 210px; }
 }
+
+
+/* Block-list management inside Profile */
+.blocked-users-list { display: grid; }
+.blocked-user-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 0;
+  border-top: 1px solid var(--app-line);
+}
+.blocked-user-row > span:nth-child(2) {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 4px;
+}
+.blocked-user-row strong {
+  color: var(--app-text);
+  font-size: 11px;
+}
+.blocked-user-row small {
+  color: var(--app-muted);
+  font-size: 9px;
+}
+.blocked-user-row .inbox-avatar {
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  font-size: 12px;
+}
+.blocked-user-row .button {
+  min-height: 34px;
+  padding: 7px 11px;
+  font-size: 9px;
+}
