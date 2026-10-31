@@ -1345,9 +1345,10 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
                 </div>
               </header>
 
-              <div className="chat-encryption-notice" role="note">
+              <div className="chat-encryption-notice chat-encryption-warning" role="note">
                 <span aria-hidden="true">ⓘ</span>
-                <div><strong>End-to-end encryption is not enabled yet.</strong><small>Messages are protected in transit, but Connectly's current message records are readable by the service. Avoid sending highly sensitive information here.</small></div>
+                <div><strong>End-to-end encryption is not enabled yet.</strong><small>Messages are protected in transit, but Connectly's current message records are readable by the service. Avoid sending private or sensitive information here.</small></div>
+                <button type="button" onClick={() => setSecurityInfoOpen(true)}>Security info</button>
               </div>
 
               <div className="conversation-messages whatsapp-message-wall" aria-live="polite">
@@ -1359,15 +1360,31 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
                   return <div key={item.id}>
                     {isNewDay && <div className="chat-day-divider"><span>{formatMessageDay(item.created_at)}</span></div>}
                     <div className={`chat-message-row ${item.sender_id === userId ? 'mine' : 'theirs'}`}>
-                      <div className="chat-bubble">
-                        <p>{item.content}</p>
-                        <time>{new Date(item.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}{item.sender_id === userId && <span className="message-sent-check" aria-label="Sent"> ✓</span>}</time>
+                      <div className="chat-bubble-wrap">
+                        <div className="chat-bubble">
+                          {item.reply_to_message_id && (() => {
+                            const original = chatMessages.find((message) => message.id === item.reply_to_message_id)
+                            return original ? <div className="chat-reply-reference"><small>{original.sender_id === userId ? 'You' : nameOf(activeChatPerson)} replied to</small><p>{original.content}</p></div> : null
+                          })()}
+                          <p>{item.content}</p>
+                          <time>{new Date(item.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}{item.sender_id === userId && <span className="message-sent-check" aria-label="Sent"> ✓</span>}</time>
+                        </div>
+                        <button type="button" className="message-options-button" title="Message options" aria-label="Message options" onClick={() => setMessageMenuFor(messageMenuFor === item.id ? null : item.id)}>⋮</button>
+                        {messageMenuFor === item.id && <div className="message-options-menu">
+                          <button type="button" onClick={() => { setReplyingTo(item); setMessageMenuFor(null); setEmojiOpen(false) }}>Reply</button>
+                          <button type="button" onClick={() => void copyMessage(item)}>Copy</button>
+                          {item.sender_id === userId && <button type="button" className="message-delete-option" onClick={() => void deleteOwnMessage(item)}>Delete for everyone</button>}
+                        </div>}
                       </div>
                     </div>
                   </div>
                 })}
               </div>
 
+              {replyingTo && <div className="chat-replying-banner">
+                <div><small>Replying to {replyingTo.sender_id === userId ? 'yourself' : nameOf(activeChatPerson)}</small><p>{replyingTo.content}</p></div>
+                <button type="button" aria-label="Cancel reply" onClick={() => setReplyingTo(null)}>×</button>
+              </div>}
               {emojiOpen && <div className="chat-emoji-picker" role="group" aria-label="Choose an emoji">
                 {['😀','😂','🥰','😊','😍','👍','🙏','❤️','🎉','🔥','👏','🤗','😎','✨','💯','👋'].map((emoji) => <button type="button" key={emoji} onClick={() => setChatDraft((value) => value + emoji)}>{emoji}</button>)}
               </div>}
@@ -1445,6 +1462,19 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
             </>}
           </section>
         </div>}
+
+          {securityInfoOpen && <div className="modal-scrim" role="presentation" onClick={() => setSecurityInfoOpen(false)}>
+            <section className="new-chat-modal glass-panel security-info-modal" role="dialog" aria-modal="true" aria-labelledby="security-info-title" onClick={(event) => event.stopPropagation()}>
+              <div className="modal-heading"><div><p className="eyebrow">CONNECTLY SECURITY</p><h3 id="security-info-title">Message privacy</h3></div><button type="button" className="icon-button" onClick={() => setSecurityInfoOpen(false)} aria-label="Close security information">×</button></div>
+              <div className="security-info-content">
+                <p><strong>Transport protection is active.</strong> HTTPS protects messages while they travel between your browser and the service.</p>
+                <p><strong>End-to-end encryption is not active yet.</strong> The message text is currently stored in a form the service can read. Do not send passwords, financial details or other highly sensitive information.</p>
+                <p><strong>What is needed next:</strong> a reviewed multi-device encryption protocol, device identity keys, safety-number or QR verification, encrypted key backup and encrypted media. The encryption must run on each device before a message is uploaded.</p>
+                <p>Connectly will only show a lock and “End-to-end encrypted” after these checks are implemented and verified.</p>
+              </div>
+              <button type="button" className="button button-primary button-wide" onClick={() => setSecurityInfoOpen(false)}>I understand</button>
+            </section>
+          </div>}
 
           {selectedPerson && <div className="modal-scrim profile-modal-scrim" role="presentation" onClick={() => setSelectedPerson(null)}>
             <section className="person-profile-modal glass-panel" role="dialog" aria-modal="true" aria-labelledby="person-profile-title" onClick={(event) => event.stopPropagation()}>
