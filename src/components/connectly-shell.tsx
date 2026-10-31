@@ -1322,6 +1322,55 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
     setSavedMessagesOpen(true)
   }
 
+  async function loadConnectlyTasks() {
+    const { data, error: taskError } = await supabase.from('connectly_tasks')
+      .select('id,user_id,conversation_id,message_id,title,due_at,status,created_at')
+      .eq('user_id', userId).order('created_at', { ascending: false }).limit(100)
+    if (taskError) { setError(taskError.message); return }
+    setTasks((data ?? []) as ConnectlyTask[])
+    setTasksOpen(true)
+  }
+
+  function startTaskFromMessage(item: MessageRow) {
+    setTaskSourceMessage(item)
+    setTaskTitle(item.content.trim().slice(0, 160) || 'Follow up on this shared item')
+    setTaskDueAt('')
+    setMessageMenuFor(null)
+  }
+
+  async function createConnectlyTask(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const title = taskTitle.trim()
+    const conversationId = taskSourceMessage?.conversation_id || activeChatId
+    if (!title || !conversationId) { setError('Add a task title and open a conversation first.'); return }
+    setTaskBusy(true)
+    setError('')
+    try {
+      const dueAt = taskDueAt ? new Date(taskDueAt + 'T23:59:00').toISOString() : null
+      const { data, error: insertError } = await supabase.from('connectly_tasks')
+        .insert({ user_id: userId, conversation_id: conversationId, message_id: taskSourceMessage?.id ?? null, title, due_at: dueAt })
+        .select('id,user_id,conversation_id,message_id,title,due_at,status,created_at').single()
+      if (insertError) throw insertError
+      setTasks((items) => [data as ConnectlyTask, ...items])
+      setTaskSourceMessage(null)
+      setTaskTitle('')
+      setTaskDueAt('')
+      setMessage('Saved to Connectly Tasks.')
+      setTasksOpen(true)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not create the task.')
+    } finally { setTaskBusy(false) }
+  }
+
+  async function toggleConnectlyTask(task: ConnectlyTask) {
+    const nextStatus = task.status === 'done' ? 'open' : 'done'
+    const { data, error: updateError } = await supabase.from('connectly_tasks')
+      .update({ status: nextStatus }).eq('id', task.id).eq('user_id', userId)
+      .select('id,user_id,conversation_id,message_id,title,due_at,status,created_at').single()
+    if (updateError) { setError(updateError.message); return }
+    setTasks((items) => items.map((item) => item.id === task.id ? data as ConnectlyTask : item))
+  }
+
   async function uploadMessageFile(file: File, forcedKind?: 'audio') {
     if (!activeChatId) return
     if (file.size <= 0 || file.size > 25 * 1024 * 1024) {
@@ -1559,6 +1608,8 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
       user_id: userId,
       is_favorite: current?.is_favorite ?? false,
       is_muted: current?.is_muted ?? false,
+      is_pinned: current?.is_pinned ?? false,
+      is_archived: current?.is_archived ?? false,
       last_read_at: timestamp,
     }
     const { error: saveError } = await supabase.from('conversation_user_settings')
@@ -1585,6 +1636,8 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
       user_id: userId,
       is_favorite: current?.is_favorite ?? false,
       is_muted: current?.is_muted ?? false,
+      is_pinned: current?.is_pinned ?? false,
+      is_archived: current?.is_archived ?? false,
       last_read_at: latestTimestamp,
     }
     const { error: saveError } = await supabase.from('conversation_user_settings')
@@ -1602,6 +1655,8 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
       user_id: userId,
       is_favorite: chatSettings[chat.conversationId]?.is_favorite ?? false,
       is_muted: chatSettings[chat.conversationId]?.is_muted ?? false,
+      is_pinned: chatSettings[chat.conversationId]?.is_pinned ?? false,
+      is_archived: chatSettings[chat.conversationId]?.is_archived ?? false,
       last_read_at: timestamp,
     }))
     if (!rows.length) { setMoreMenuOpen(false); return }
@@ -1614,13 +1669,15 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
     setMessage('All conversations marked as read.')
   }
 
-  async function setConversationFlag(chat: ChatSummary, field: 'is_favorite'|'is_muted') {
+  async function setConversationFlag(chat: ChatSummary, field: 'is_favorite'|'is_muted'|'is_pinned'|'is_archived') {
     const current = chatSettings[chat.conversationId]
     const row = {
       conversation_id: chat.conversationId,
       user_id: userId,
       is_favorite: field === 'is_favorite' ? !chat.isFavorite : (current?.is_favorite ?? false),
       is_muted: field === 'is_muted' ? !chat.isMuted : (current?.is_muted ?? false),
+      is_pinned: field === 'is_pinned' ? !chat.isPinned : (current?.is_pinned ?? false),
+      is_archived: field === 'is_archived' ? !chat.isArchived : (current?.is_archived ?? false),
       last_read_at: current?.last_read_at ?? null,
     }
     const { error: saveError } = await supabase.from('conversation_user_settings')
@@ -1638,6 +1695,8 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
     setChatMenuFor(null)
     setMessageMenuFor(null)
     setReplyingTo(null)
+    setMessageSearch('')
+    setMessageSearchOpen(false)
     clearFeedback()
     await markChatRead(chat.conversationId)
     await loadChatMessages(chat.conversationId)
@@ -1673,8 +1732,12 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
             {moreMenuOpen && <div className="topbar-more-menu">
               <button type="button" onClick={() => { setNewChatOpen(true); setNewGroupMode(false); setMoreMenuOpen(false) }}>New chat</button>
               <button type="button" onClick={() => { setNewChatOpen(true); setNewGroupMode(true); setMoreMenuOpen(false) }}>New group</button>
-              <button type="button" onClick={() => void markAllChatsRead()}>Mark all as read</button>
+              <button type="button" onClick={() => { setInboxFilter('archived'); setTab('chats'); setMoreMenuOpen(false) }}>Archived chats</button>
+               <button type="button" onClick={() => void markAllChatsRead()}>Mark all as read</button>
               <button type="button" onClick={() => { setMoreMenuOpen(false); void loadSavedMessages() }}>Connectly Notes</button>
+               <button type="button" onClick={() => { setMoreMenuOpen(false); void loadConnectlyTasks() }}>Connectly Tasks</button>
+               <button type="button" onClick={() => { setMoreMenuOpen(false); void createFriendQr() }}>Show my QR</button>
+               <button type="button" onClick={() => { setQrMode('scan'); setQrInput(''); setQrCameraActive(false); setMoreMenuOpen(false) }}>Scan friend QR</button>
               <button type="button" onClick={() => { setTab('profile'); setMoreMenuOpen(false) }}>Settings & profile</button>
               <button type="button" onClick={() => { setMoreMenuOpen(false); void signOut() }}>Sign out</button>
             </div>}
@@ -1697,7 +1760,9 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
                 ['all', 'All'],
                 ['unread', 'Unread'],
                 ['favorites', 'Favorites'],
+                ['pinned', 'Pinned'],
                 ['groups', 'Groups'],
+                ['archived', 'Archived'],
               ] as [InboxFilter, string][]).map(([value, label]) => <button
                 type="button"
                 role="tab"
@@ -1727,6 +1792,7 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
                   <span className="inbox-chat-meta whatsapp-chat-meta">
                     <time>{chat.lastAt ? formatChatTime(chat.lastAt) : ''}</time>
                     <span className="chat-meta-indicators">
+                      {chat.isPinned && <span className="chat-pin-indicator" title="Pinned">⌖</span>}
                       {chat.isMuted && <span className="chat-muted-indicator" title="Muted">♩̸</span>}
                       {chat.isFavorite && <span className="chat-favorite-indicator" title="Favorite">★</span>}
                       {chat.unreadCount > 0 && <b className="chat-unread-count">{chat.unreadCount > 99 ? '99+' : chat.unreadCount}</b>}
@@ -1738,16 +1804,18 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
                   <button type="button" className="chat-row-menu-button" onClick={() => setChatMenuFor(chatMenuFor === chat.conversationId ? null : chat.conversationId)} aria-label="Chat options" title="Chat options">⋮</button>
                   {chatMenuFor === chat.conversationId && <div className="chat-row-menu">
                     <button type="button" onClick={() => void setConversationFlag(chat, 'is_favorite')}>{chat.isFavorite ? 'Remove favorite' : 'Add to favorites'}</button>
-                    <button type="button" onClick={() => void setConversationFlag(chat, 'is_muted')}>{chat.isMuted ? 'Unmute chat' : 'Mute chat'}</button>
+                    <button type="button" onClick={() => void setConversationFlag(chat, 'is_pinned')}>{chat.isPinned ? 'Unpin chat' : 'Pin chat'}</button>
+                     <button type="button" onClick={() => void setConversationFlag(chat, 'is_muted')}>{chat.isMuted ? 'Unmute chat' : 'Mute chat'}</button>
                     <button type="button" onClick={() => void (chat.unreadCount > 0 ? markChatRead(chat.conversationId) : markChatUnread(chat))}>{chat.unreadCount > 0 ? 'Mark as read' : 'Mark as unread'}</button>
+                     <button type="button" onClick={() => void setConversationFlag(chat, 'is_archived')}>{chat.isArchived ? 'Move to inbox' : 'Archive chat'}</button>
                     <button type="button" onClick={() => { setChatMenuFor(null); void selectChat(chat) }}>Open chat</button>
                   </div>}
                 </div>
               </article>)}
               {!filteredChats.length && <div className="inbox-empty glass-panel">
-                <div className="inbox-empty-icon">{inboxFilter === 'favorites' ? '★' : inboxFilter === 'groups' ? '♧' : '✉'}</div>
-                <h4>{chatSearch ? 'No matching chats' : inboxFilter === 'unread' ? 'All caught up' : inboxFilter === 'favorites' ? 'No favorite chats yet' : inboxFilter === 'groups' ? 'No group conversations yet' : 'Your inbox is ready'}</h4>
-                <p>{chatSearch ? 'Try another name or message.' : inboxFilter === 'unread' ? 'New messages will appear here.' : inboxFilter === 'favorites' ? 'Star a chat to keep it easy to find.' : inboxFilter === 'groups' ? 'Group conversations will appear here when created.' : 'Start a conversation with someone in your friends list.'}</p>
+                <div className="inbox-empty-icon">{inboxFilter === 'favorites' ? '★' : inboxFilter === 'pinned' ? '⌖' : inboxFilter === 'groups' ? '♧' : inboxFilter === 'archived' ? '▣' : '✉'}</div>
+                <h4>{chatSearch ? 'No matching chats' : inboxFilter === 'unread' ? 'All caught up' : inboxFilter === 'favorites' ? 'No favorite chats yet' : inboxFilter === 'pinned' ? 'No pinned chats yet' : inboxFilter === 'groups' ? 'No group conversations yet' : inboxFilter === 'archived' ? 'No archived chats' : 'Your inbox is ready'}</h4>
+                <p>{chatSearch ? 'Try another name or message.' : inboxFilter === 'unread' ? 'New messages will appear here.' : inboxFilter === 'favorites' ? 'Star a chat to keep it easy to find.' : inboxFilter === 'pinned' ? 'Pin important conversations to keep them at the top.' : inboxFilter === 'groups' ? 'Group conversations will appear here when created.' : inboxFilter === 'archived' ? 'Archived conversations stay out of your main inbox.' : 'Start a conversation with someone in your friends list.'}</p>
               </div>}
             </div>
 
