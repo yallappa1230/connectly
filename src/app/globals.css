@@ -2059,3 +2059,21 @@ body:has(.app-shell[data-theme="glass"]) {
   .app-shell .mobile-nav small { font-size: 7.5px; }
   .group-member-option { min-height: 51px; }
 }
+
+.composer-mic-button {
+  display: grid;
+  place-items: center;
+  width: 43px;
+  height: 43px;
+  flex: 0 0 43px;
+  border: 0;
+  border-radius: 50%;
+  color: #06251f;
+  background: #00c986;
+  font-size: 20px;
+}
+.composer-mic-button:disabled { opacity: .7; }
+.topbar-icon-button:disabled { opacity: .42; }
+@media (max-width: 680px) {
+  .composer-mic-button { width: 39px; height: 39px; flex-basis: 39px; }
+}
