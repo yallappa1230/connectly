@@ -1147,6 +1147,19 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
     }
   }
 
+  async function revokeFriendQr() {
+    const { error: revokeError } = await supabase.from('friend_qr_tokens')
+      .update({ revoked_at: new Date().toISOString() })
+      .eq('user_id', userId)
+      .is('redeemed_at', null)
+      .is('revoked_at', null)
+    if (revokeError) setError(revokeError.message)
+    setQrToken('')
+    setQrSvg('')
+    setQrExpiresAt('')
+    setQrMode(null)
+  }
+
   async function redeemFriendQr() {
     const token = qrInput.match(/[a-f0-9]{64}/i)?.[0]?.toLowerCase()
     if (!token) {
@@ -1942,6 +1955,72 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
             </section>
           </div>}
 
+          {qrMode && <div className="modal-scrim qr-modal-scrim" role="presentation" onClick={() => { setQrMode(null); setQrCameraActive(false) }}>
+            <section className="qr-modal glass-panel" role="dialog" aria-modal="true" aria-labelledby="qr-modal-title" onClick={(event) => event.stopPropagation()}>
+              <div className="modal-heading">
+                <div><p className="eyebrow">CONNECTLY CONNECTION</p><h3 id="qr-modal-title">{qrMode === 'show' ? 'Your friend QR' : 'Scan a friend QR'}</h3></div>
+                <button type="button" className="icon-button" onClick={() => { setQrMode(null); setQrCameraActive(false) }} aria-label="Close QR dialog">×</button>
+              </div>
+              {qrMode === 'show' ? <>
+                <div className="qr-code-surface">
+                  {qrSvg ? <img src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(qrSvg)}`} alt="One-time Connectly friend QR code" /> : <span>QR unavailable</span>}
+                </div>
+                <h4 className="qr-owner-name">{nameOf(profile)}</h4>
+                <p className="muted small-text qr-expiry">This code expires at {qrExpiresAt ? new Date(qrExpiresAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '—'} and works once.</p>
+                <div className="qr-profile-actions">
+                  <button type="button" className="button button-subtle" onClick={() => { void navigator.clipboard.writeText(qrToken).then(() => setMessage('One-time QR code copied.')).catch(() => setError('Clipboard access is unavailable.')) }}>Copy connection code</button>
+                  <button type="button" className="button button-danger" onClick={() => void revokeFriendQr()}>Revoke code</button>
+                </div>
+              </> : <>
+                {qrCameraActive && <video ref={qrScanVideoRef} className="qr-scanner-video" autoPlay muted playsInline />}
+                {!qrCameraActive && <div className="qr-scanner-placeholder"><span>▦</span><strong>Scan a Connectly QR code</strong><small>Use your camera or paste the connection code below.</small></div>}
+                <button type="button" className="button button-subtle button-wide" onClick={() => setQrCameraActive((value) => !value)}>{qrCameraActive ? 'Stop camera' : 'Start camera scanner'}</button>
+                <label className="field-label">QR connection code<input value={qrInput} onChange={(event) => setQrInput(event.target.value)} placeholder="Paste the 64-character code" autoCapitalize="none" autoCorrect="off" /></label>
+                <button type="button" className="button button-primary button-wide" onClick={() => void redeemFriendQr()} disabled={qrBusy || qrInput.trim().length < 64}>{qrBusy ? 'Connecting…' : 'Connect'}</button>
+              </>}
+            </section>
+          </div>}
+
+          {savedMessagesOpen && <div className="modal-scrim" role="presentation" onClick={() => setSavedMessagesOpen(false)}>
+            <section className="new-chat-modal glass-panel saved-messages-modal" role="dialog" aria-modal="true" aria-labelledby="saved-messages-title" onClick={(event) => event.stopPropagation()}>
+              <div className="modal-heading"><div><p className="eyebrow">CONNECTLY NOTES</p><h3 id="saved-messages-title">Saved messages</h3></div><button type="button" className="icon-button" onClick={() => setSavedMessagesOpen(false)} aria-label="Close saved messages">×</button></div>
+              {savedMessages.length ? <div className="saved-messages-list">
+                {savedMessages.map((saved) => {
+                  const chat = chats.find((item) => item.conversationId === saved.message.conversation_id)
+                  return <article className="saved-message-item" key={saved.message_id}>
+                    <p>{saved.message.content}</p>
+                    <small>{chat?.isGroup ? (chat.title || 'Group chat') : nameOf(chat?.person)} · {formatChatTime(saved.saved_at)}</small>
+                    <button type="button" className="text-button" onClick={() => {
+                      setSavedMessagesOpen(false)
+                      if (chat) void selectChat(chat)
+                    }}>Open conversation</button>
+                    <button type="button" className="text-button danger-text" onClick={async () => {
+                      const { error: deleteError } = await supabase.from('saved_messages').delete().eq('user_id', userId).eq('message_id', saved.message_id)
+                      if (deleteError) { setError(deleteError.message); return }
+                      setSavedMessages((items) => items.filter((item) => item.message_id !== saved.message_id))
+                      setSavedMessageIds((items) => items.filter((id) => id !== saved.message_id))
+                    }}>Remove saved message</button>
+                  </article>
+                })}
+              </div> : <div className="inbox-empty glass-panel"><span className="inbox-empty-icon">▱</span><h4>No saved messages yet</h4><p>Use a message's menu and choose Save to Connectly Notes.</p></div>}
+            </section>
+          </div>}
+
+          {reportPerson && <div className="modal-scrim" role="presentation" onClick={() => setReportPerson(null)}>
+            <section className="new-chat-modal glass-panel report-modal" role="dialog" aria-modal="true" aria-labelledby="report-person-title" onClick={(event) => event.stopPropagation()}>
+              <div className="modal-heading"><div><p className="eyebrow">SAFETY CENTRE</p><h3 id="report-person-title">Report {nameOf(reportPerson)}</h3></div><button type="button" className="icon-button" onClick={() => setReportPerson(null)} aria-label="Close report">×</button></div>
+              <form className="stack-form" onSubmit={submitUserReport}>
+                <label className="field-label">Reason
+                  <select value={reportReason} onChange={(event) => setReportReason(event.target.value as typeof reportReason)}>
+                    <option value="spam">Spam</option><option value="harassment">Harassment or bullying</option><option value="impersonation">Impersonation</option><option value="inappropriate_content">Inappropriate content</option><option value="other">Other</option>
+                  </select>
+                </label>
+                <label className="field-label">Details (optional)<textarea value={reportDetails} onChange={(event) => setReportDetails(event.target.value)} maxLength={1000} rows={4} placeholder="Tell us what happened…" /></label>
+                <button type="submit" className="button button-primary button-wide">Submit report</button>
+              </form>
+            </section>
+          </div>}
+
           {selectedPerson && <div className="modal-scrim profile-modal-scrim" role="presentation" onClick={() => setSelectedPerson(null)}>
             <section className="person-profile-modal glass-panel" role="dialog" aria-modal="true" aria-labelledby="person-profile-title" onClick={(event) => event.stopPropagation()}>
               <div className="modal-heading"><div><p className="eyebrow">CONNECTLY MEMBER</p><h3 id="person-profile-title">Profile details</h3></div><button type="button" className="icon-button" onClick={() => setSelectedPerson(null)} aria-label="Close profile">×</button></div>
@@ -1968,6 +2047,7 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
                     void unfriend(friend)
                   }
                 }} disabled={busy || !friends.some((item) => item.person.id === selectedPerson.id)}>Remove friend</button>
+                <button type="button" className="button button-danger" onClick={() => { setReportPerson(selectedPerson); setSelectedPerson(null) }} disabled={busy}>Report</button>
                 <button type="button" className="button button-danger" onClick={() => { const person = selectedPerson; setSelectedPerson(null); void blockPerson(person) }} disabled={busy}>Block</button>
               </div>
               <button type="button" className="button button-subtle button-wide" onClick={() => setSelectedPerson(null)}>Close</button>
@@ -1994,6 +2074,33 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
             <div className="section-heading"><div><p className="eyebrow">PRIVACY & SECURITY</p><h3>End-to-end encryption</h3></div><span className="encryption-pending-label">Not enabled</span></div>
             <p className="encryption-status-copy">Connectly is not end-to-end encrypted yet. Current message text is stored as readable content in the database, although traffic is protected by HTTPS and account-level access controls. Do not treat the current chat as suitable for highly sensitive information.</p>
             <p className="encryption-status-copy">The planned implementation uses an audited browser-compatible protocol with per-device identity keys, signed prekeys, one-time prekeys, ratcheting message keys, encrypted backups and safety-number verification. Encryption will only be enabled after two-device and key-recovery tests.</p>
+          </div>
+          <div className="form-panel glass-panel">
+            <div className="section-heading"><div><p className="eyebrow">PRIVACY CONTROLS</p><h3>Who can find and contact you</h3><p className="muted small-text">These preferences are enforced by the database.</p></div></div>
+            <label className="privacy-toggle-row">
+              <span><strong>Discoverable by username</strong><small>Allow signed-in users to find your profile.</small></span>
+              <input type="checkbox" checked={privacySettings.discoverable} onChange={(event) => void savePrivacySetting('discoverable', event.target.checked)} />
+            </label>
+            <label className="privacy-toggle-row">
+              <span><strong>Allow friend requests</strong><small>Allow people to send you a connection request.</small></span>
+              <input type="checkbox" checked={privacySettings.allow_friend_requests} onChange={(event) => void savePrivacySetting('allow_friend_requests', event.target.checked)} />
+            </label>
+            <label className="privacy-toggle-row">
+              <span><strong>Read receipts</strong><small>Let friends know when you have read their messages.</small></span>
+              <input type="checkbox" checked={privacySettings.read_receipts} onChange={(event) => void savePrivacySetting('read_receipts', event.target.checked)} />
+            </label>
+          </div>
+          <div className="form-panel glass-panel qr-settings-panel">
+            <div className="section-heading"><div><p className="eyebrow">CONNECTLY ID</p><h3>QR friend connection</h3><p className="muted small-text">Create a private QR code or scan a friend's code.</p></div></div>
+            <div className="qr-profile-actions">
+              <button type="button" className="button button-primary" onClick={() => void createFriendQr()} disabled={qrBusy}>{qrBusy ? 'Generating…' : 'Show my QR'}</button>
+              <button type="button" className="button button-subtle" onClick={() => { setQrMode('scan'); setQrInput(''); setQrCameraActive(false) }}>Scan a friend QR</button>
+            </div>
+            <p className="muted small-text">QR codes expire after 10 minutes and can be used once. You can revoke an unused code by generating a replacement.</p>
+          </div>
+          <div className="form-panel glass-panel">
+            <div className="section-heading"><div><p className="eyebrow">YOUR SAVED CONTENT</p><h3>Connectly Notes</h3><p className="muted small-text">Messages you save from any chat, kept in one private list.</p></div></div>
+            <button type="button" className="button button-subtle button-wide" onClick={() => void loadSavedMessages()}>Open saved messages</button>
           </div>
           <div className="form-panel glass-panel"><div className="section-heading"><div><p className="eyebrow">PERSONAL DETAILS</p><h3>Edit profile</h3></div></div>
             <form className="stack-form" onSubmit={saveProfile}><label className="field-label">Full name<input value={fullName} onChange={(e) => setFullName(e.target.value)} maxLength={80} placeholder="Your name" /></label><label className="field-label">Username<div className="input-prefix"><span>@</span><input value={username} onChange={(e) => setUsername(e.target.value)} maxLength={40} placeholder="yourname" /></div></label><label className="field-label">Email address<input value={email} disabled /></label><p className="muted small-text">Username: 3–40 characters, lowercase letters, numbers, dots and underscores.</p><button className="button button-primary" type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save changes'}</button></form>
