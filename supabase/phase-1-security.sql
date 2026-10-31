@@ -6,6 +6,16 @@ BEGIN;
 
 ALTER TABLE public.friend_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_blocks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.conversations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.conversation_members ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
+
+-- One-to-one conversations use a deterministic key for each unordered user pair.
+ALTER TABLE public.conversations
+  ADD COLUMN IF NOT EXISTS direct_key text;
+CREATE UNIQUE INDEX IF NOT EXISTS conversations_direct_key_unique
+  ON public.conversations (direct_key)
+  WHERE direct_key IS NOT NULL;
 
 CREATE OR REPLACE VIEW public.friendships WITH (security_invoker = true) AS
 SELECT LEAST(sender_id, receiver_id) AS user_low,
@@ -174,13 +184,37 @@ DROP POLICY IF EXISTS "Members read conversations" ON public.conversations;
 CREATE POLICY "Members read conversations" ON public.conversations
   FOR SELECT TO authenticated USING (private.is_conversation_member(id));
 
+DROP POLICY IF EXISTS "Create own conversations" ON public.conversations;
+CREATE POLICY "Create own conversations" ON public.conversations
+  FOR INSERT TO authenticated
+  WITH CHECK (auth.uid() IS NOT NULL AND created_by = auth.uid());
+
 DROP POLICY IF EXISTS "Members read membership" ON public.conversation_members;
 CREATE POLICY "Members read membership" ON public.conversation_members
   FOR SELECT TO authenticated USING (private.is_conversation_member(conversation_id));
 
 DROP POLICY IF EXISTS "Only creator adds members" ON public.conversation_members;
 CREATE POLICY "Only creator adds members" ON public.conversation_members
-  FOR INSERT TO authenticated WITH CHECK (private.is_conversation_creator(conversation_id));
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    private.is_conversation_creator(conversation_id)
+    AND (
+      user_id = auth.uid()
+      OR EXISTS (
+        SELECT 1 FROM public.friend_requests fr
+        WHERE fr.status = 'accepted'
+          AND (
+            (fr.sender_id = auth.uid() AND fr.receiver_id = user_id)
+            OR (fr.receiver_id = auth.uid() AND fr.sender_id = user_id)
+          )
+      )
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM public.user_blocks b
+      WHERE (b.blocker_id = auth.uid() AND b.blocked_id = user_id)
+         OR (b.blocker_id = user_id AND b.blocked_id = auth.uid())
+    )
+  );
 
 DROP POLICY IF EXISTS "Leave or remove membership" ON public.conversation_members;
 CREATE POLICY "Leave or remove membership" ON public.conversation_members
@@ -233,5 +267,20 @@ REVOKE ALL ON FUNCTION private.rls_auto_enable() FROM PUBLIC, anon, authenticate
 
 CREATE INDEX IF NOT EXISTS conversations_created_by_idx ON public.conversations(created_by);
 CREATE INDEX IF NOT EXISTS messages_sender_id_idx ON public.messages(sender_id);
+
+-- Enable Realtime message delivery exactly once.
+DO $
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime'
+      AND schemaname = 'public'
+      AND tablename = 'messages'
+  ) THEN
+    EXECUTE 'ALTER PUBLICATION supabase_realtime ADD TABLE public.messages';
+  END IF;
+END $;
+
+NOTIFY pgrst, 'reload schema';
 
 COMMIT;
