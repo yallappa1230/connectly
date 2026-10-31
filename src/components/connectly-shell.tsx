@@ -415,6 +415,457 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
     setSelectedPerson(person)
   }
 
+  function updateCallState(next: CallView | null) {
+    callStateRef.current = next
+    setCallState(next)
+  }
+
+  async function waitForCallChannel(channel: ReturnType<typeof supabase.channel>) {
+    await new Promise<void>((resolve, reject) => {
+      let settled = false
+      const timeout = setTimeout(() => {
+        if (!settled) {
+          settled = true
+          reject(new Error('Call connection timed out. Please try again.'))
+        }
+      }, 12000)
+
+      channel.subscribe((status, channelError) => {
+        if (status === 'SUBSCRIBED' && !settled) {
+          settled = true
+          clearTimeout(timeout)
+          resolve()
+        } else if ((status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') && !settled) {
+          settled = true
+          clearTimeout(timeout)
+          reject(channelError instanceof Error ? channelError : new Error('Could not connect to the private call channel.'))
+        }
+      })
+    })
+  }
+
+  async function broadcastToUser(
+    targetId: string,
+    event: 'incoming-call'|'call-status',
+    payload: Record<string, unknown>,
+  ) {
+    const channel = supabase.channel(`user-calls:${targetId}`, {
+      config: { private: true, broadcast: { ack: true } },
+    })
+    try {
+      await waitForCallChannel(channel)
+      const result = await channel.send({ type: 'broadcast', event, payload })
+      if (result !== 'ok') throw new Error('Could not send the call invitation. Please try again.')
+    } finally {
+      await supabase.removeChannel(channel)
+    }
+  }
+
+  async function sendPairCallSignal(kind: CallSignalPayload['kind'], extra: Partial<CallSignalPayload> = {}) {
+    const active = callStateRef.current
+    const channel = callChannelRef.current
+    if (!active || !channel) return
+    const result = await channel.send({
+      type: 'broadcast',
+      event: 'signal',
+      payload: {
+        callId: active.callId,
+        from: userId,
+        to: active.person.id,
+        kind,
+        ...extra,
+      },
+    })
+    if (result !== 'ok') throw new Error('The call signal could not be sent.')
+  }
+
+  async function flushPendingCallIce() {
+    const channel = callChannelRef.current
+    const active = callStateRef.current
+    if (!channel || !active) return
+    const queued = pendingLocalIceRef.current.splice(0)
+    for (const candidate of queued) {
+      const result = await channel.send({
+        type: 'broadcast',
+        event: 'signal',
+        payload: {
+          callId: active.callId,
+          from: userId,
+          to: active.person.id,
+          kind: 'ice',
+          candidate,
+        },
+      })
+      if (result !== 'ok') throw new Error('A network connection update could not be sent.')
+    }
+  }
+
+  async function flushPendingRemoteIce(peer: RTCPeerConnection) {
+    const queued = pendingRemoteIceRef.current.splice(0)
+    for (const candidate of queued) {
+      try {
+        await peer.addIceCandidate(new RTCIceCandidate(candidate))
+      } catch {
+        // A stale ICE candidate can be ignored; the browser will keep negotiating.
+      }
+    }
+  }
+
+  async function handlePairCallSignal(payload: CallSignalPayload) {
+    const active = callStateRef.current
+    const peer = callPeerRef.current
+    if (!active || !peer || payload.callId !== active.callId || payload.from !== active.person.id || payload.to !== userId) return
+
+    if (payload.kind === 'end') {
+      cleanupCall()
+      return
+    }
+
+    if (payload.kind === 'answer' && payload.sdp && active.direction === 'outgoing') {
+      try {
+        await peer.setRemoteDescription(new RTCSessionDescription(payload.sdp))
+        remotePeerReadyRef.current = true
+        await flushPendingRemoteIce(peer)
+        await flushPendingCallIce()
+        updateCallState({ ...active, phase: 'connecting' })
+      } catch {
+        setCallError('The other person could not join this call. Please try again.')
+        cleanupCall()
+      }
+      return
+    }
+
+    if (payload.kind === 'ice' && payload.candidate) {
+      if (peer.remoteDescription) {
+        try {
+          await peer.addIceCandidate(new RTCIceCandidate(payload.candidate))
+        } catch {
+          // Ignore candidates that arrive after a call has already moved on.
+        }
+      } else {
+        pendingRemoteIceRef.current.push(payload.candidate)
+      }
+    }
+  }
+
+  function createCallPeer(person: Profile, stream: MediaStream) {
+    const peer = new RTCPeerConnection({
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+      ],
+    })
+
+    stream.getTracks().forEach((track) => peer.addTrack(track, stream))
+    peer.ontrack = (event) => {
+      const streamFromPeer = event.streams[0] ?? new MediaStream([event.track])
+      setRemoteStream(streamFromPeer)
+    }
+    peer.onicecandidate = (event) => {
+      if (!event.candidate) return
+      const candidate = event.candidate.toJSON()
+      if (!remotePeerReadyRef.current) {
+        pendingLocalIceRef.current.push(candidate)
+      } else {
+        void sendPairCallSignal('ice', { candidate }).catch((caught) => {
+          setCallError(caught instanceof Error ? caught.message : 'Could not update the call connection.')
+        })
+      }
+    }
+    peer.onconnectionstatechange = () => {
+      if (peer.connectionState === 'connected') {
+        const active = callStateRef.current
+        if (active) updateCallState({ ...active, phase: 'active' })
+      } else if (peer.connectionState === 'failed') {
+        setCallError('A direct connection could not be made on this network. A TURN relay may be needed.')
+        cleanupCall()
+      }
+    }
+    callPeerRef.current = peer
+    return peer
+  }
+
+  function cleanupCall() {
+    if (callTimerRef.current) {
+      clearTimeout(callTimerRef.current)
+      callTimerRef.current = null
+    }
+    callPeerRef.current?.close()
+    callPeerRef.current = null
+    callMediaRef.current?.getTracks().forEach((track) => track.stop())
+    callMediaRef.current = null
+    pendingLocalIceRef.current = []
+    pendingRemoteIceRef.current = []
+    remotePeerReadyRef.current = false
+    incomingOfferRef.current = null
+    setLocalStream(null)
+    setRemoteStream(null)
+    setCallMuted(false)
+    setCameraEnabled(true)
+    updateCallState(null)
+    const channel = callChannelRef.current
+    callChannelRef.current = null
+    if (channel) void supabase.removeChannel(channel)
+  }
+
+  async function createPairCallChannel(person: Profile, callId: string) {
+    const topic = `call:${[userId, person.id].sort().join(':')}`
+    const channel = supabase.channel(topic, {
+      config: { private: true, broadcast: { ack: true } },
+    })
+    channel.on('broadcast', { event: 'signal' }, ({ payload }) => {
+      void handlePairCallSignal(payload as CallSignalPayload)
+    })
+    await waitForCallChannel(channel)
+    callChannelRef.current = channel
+    return channel
+  }
+
+  async function startCall(person: Profile, mode: CallMode) {
+    if (callStateRef.current) {
+      setCallError('Finish your current call before starting another one.')
+      return
+    }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCallError('This browser does not support microphone or camera access.')
+      return
+    }
+
+    setCallError('')
+    const callId = crypto.randomUUID()
+    const outgoingCall: CallView = { callId, person, mode, phase: 'calling', direction: 'outgoing' }
+    updateCallState(outgoingCall)
+    remotePeerReadyRef.current = false
+    pendingLocalIceRef.current = []
+    pendingRemoteIceRef.current = []
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: mode === 'video' ? {
+          facingMode: 'user',
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+          frameRate: { ideal: 24, max: 30 },
+        } : false,
+      })
+      callMediaRef.current = stream
+      setLocalStream(stream)
+
+      await createPairCallChannel(person, callId)
+      const peer = createCallPeer(person, stream)
+      const offer = await peer.createOffer()
+      await peer.setLocalDescription(offer)
+      const localDescription = peer.localDescription?.toJSON() ?? offer
+
+      await broadcastToUser(person.id, 'incoming-call', {
+        callId,
+        from: userId,
+        to: person.id,
+        mode,
+        offer: localDescription,
+      })
+
+      callTimerRef.current = setTimeout(() => {
+        const active = callStateRef.current
+        if (active?.callId === callId && active.phase === 'calling') {
+          setCallError('No answer. You can try again later.')
+          void broadcastToUser(person.id, 'call-status', {
+            callId,
+            from: userId,
+            to: person.id,
+            status: 'cancelled',
+          })
+          cleanupCall()
+        }
+      }, 45000)
+    } catch (caught) {
+      setCallError(caught instanceof Error ? caught.message : 'Could not start this call.')
+      cleanupCall()
+    }
+  }
+
+  async function acceptIncomingCall() {
+    const active = callStateRef.current
+    const invitation = incomingOfferRef.current
+    if (!active || active.direction !== 'incoming' || !invitation) return
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: active.mode === 'video' ? {
+          facingMode: 'user',
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+          frameRate: { ideal: 24, max: 30 },
+        } : false,
+      })
+      callMediaRef.current = stream
+      setLocalStream(stream)
+
+      await createPairCallChannel(active.person, active.callId)
+      const peer = createCallPeer(active.person, stream)
+      await peer.setRemoteDescription(new RTCSessionDescription(invitation.offer))
+      remotePeerReadyRef.current = true
+      await flushPendingRemoteIce(peer)
+      const answer = await peer.createAnswer()
+      await peer.setLocalDescription(answer)
+      await sendPairCallSignal('answer', { sdp: peer.localDescription?.toJSON() ?? answer })
+      updateCallState({ ...active, phase: 'connecting' })
+    } catch (caught) {
+      setCallError(caught instanceof Error ? caught.message : 'Could not answer this call.')
+      try {
+        await broadcastToUser(active.person.id, 'call-status', {
+          callId: active.callId,
+          from: userId,
+          to: active.person.id,
+          status: 'declined',
+        })
+      } catch {
+        // The caller may already have ended the call.
+      }
+      cleanupCall()
+    }
+  }
+
+  async function declineIncomingCall() {
+    const active = callStateRef.current
+    if (active?.direction === 'incoming') {
+      try {
+        await broadcastToUser(active.person.id, 'call-status', {
+          callId: active.callId,
+          from: userId,
+          to: active.person.id,
+          status: 'declined',
+        })
+      } catch {
+        // The caller may already have ended the call.
+      }
+    }
+    cleanupCall()
+  }
+
+  async function endCall() {
+    const active = callStateRef.current
+    if (!active) return
+    try {
+      if (active.direction === 'outgoing' && active.phase === 'calling') {
+        await broadcastToUser(active.person.id, 'call-status', {
+          callId: active.callId,
+          from: userId,
+          to: active.person.id,
+          status: 'cancelled',
+        })
+      } else {
+        await sendPairCallSignal('end')
+      }
+    } catch {
+      // Always stop the local camera and microphone, even when signaling is lost.
+    }
+    cleanupCall()
+  }
+
+  function toggleCallMicrophone() {
+    const next = !callMuted
+    callMediaRef.current?.getAudioTracks().forEach((track) => { track.enabled = !next })
+    setCallMuted(next)
+  }
+
+  function toggleCallCamera() {
+    const next = !cameraEnabled
+    callMediaRef.current?.getVideoTracks().forEach((track) => { track.enabled = !next })
+    setCameraEnabled(next)
+  }
+
+  useEffect(() => {
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = localStream
+      if (localStream) void localVideoRef.current.play().catch(() => {})
+    }
+  }, [localStream, callState?.callId])
+
+  useEffect(() => {
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = remoteStream
+      if (remoteStream) void remoteVideoRef.current.play().catch(() => {})
+    }
+  }, [remoteStream, callState?.callId])
+
+  useEffect(() => {
+    let mounted = true
+    const channel = supabase.channel(`user-calls:${userId}`, {
+      config: { private: true },
+    })
+    channel
+      .on('broadcast', { event: 'incoming-call' }, async ({ payload }) => {
+        const invite = payload as IncomingCallPayload
+        if (!mounted || invite.to !== userId || invite.from === userId) return
+        if (callStateRef.current) {
+          try {
+            await broadcastToUser(invite.from, 'call-status', {
+              callId: invite.callId,
+              from: userId,
+              to: invite.from,
+              status: 'busy',
+            })
+          } catch {
+            // Ignore a busy response if the caller already left.
+          }
+          return
+        }
+
+        const [friendshipResult, blockResult, personResult] = await Promise.all([
+          supabase.from('friend_requests')
+            .select('id')
+            .eq('status', 'accepted')
+            .or(`and(sender_id.eq.${userId},receiver_id.eq.${invite.from}),and(sender_id.eq.${invite.from},receiver_id.eq.${userId})`)
+            .maybeSingle(),
+          supabase.from('user_blocks')
+            .select('blocker_id')
+            .or(`and(blocker_id.eq.${userId},blocked_id.eq.${invite.from}),and(blocker_id.eq.${invite.from},blocked_id.eq.${userId})`),
+          supabase.from('profiles')
+            .select('id,username,full_name,avatar_url,created_at')
+            .eq('id', invite.from)
+            .maybeSingle(),
+        ])
+        if (!mounted || friendshipResult.error || !friendshipResult.data || blockResult.error || (blockResult.data ?? []).length || !personResult.data) return
+
+        incomingOfferRef.current = invite
+        updateCallState({
+          callId: invite.callId,
+          person: personResult.data as Profile,
+          mode: invite.mode === 'video' ? 'video' : 'audio',
+          phase: 'incoming',
+          direction: 'incoming',
+        })
+      })
+      .on('broadcast', { event: 'call-status' }, ({ payload }) => {
+        const status = payload as { callId?: string; status?: string }
+        const active = callStateRef.current
+        if (!active || status.callId !== active.callId) return
+        if (status.status === 'declined') {
+          setCallError(`${nameOf(active.person)} declined the call.`)
+          cleanupCall()
+        } else if (status.status === 'cancelled') {
+          setCallError('The incoming call was cancelled.')
+          cleanupCall()
+        } else if (status.status === 'busy') {
+          setCallError(`${nameOf(active.person)} is already in another call.`)
+          cleanupCall()
+        }
+      })
+      .subscribe((status, channelError) => {
+        if (mounted && (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT')) {
+          setCallError(channelError instanceof Error ? channelError.message : 'Call notifications could not connect.')
+        }
+      })
+
+    return () => {
+      mounted = false
+      void supabase.removeChannel(channel)
+    }
+  }, [supabase, userId])
+
   async function sendChatMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const content = chatDraft.trim()
