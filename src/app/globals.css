@@ -938,3 +938,58 @@ a { color: inherit; text-decoration: none; }
   .app-shell *::before,
   .app-shell *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }
+
+/* Bind the selected React theme to the full page canvas as well as the app panel. */
+body:has(.app-shell[data-theme="black"]) {
+  --bg: #08090d;
+  --surface: #111218;
+  --surface-strong: #171821;
+  --line: rgba(255,255,255,.10);
+  --text: #f4f3f8;
+  --muted: #9293a2;
+  background: #08090d !important;
+  color: #f4f3f8;
+}
+body:has(.app-shell[data-theme="white"]) {
+  --bg: #f4f5f8;
+  --surface: #fff;
+  --surface-strong: #f9faff;
+  --line: rgba(28,32,48,.11);
+  --text: #171923;
+  --muted: #737786;
+  background: #f4f5f8 !important;
+  color: #171923;
+}
+body:has(.app-shell[data-theme="glass"]) {
+  --bg: #090711;
+  --surface: rgba(28,24,43,.58);
+  --surface-strong: rgba(40,34,62,.72);
+  --line: rgba(224,211,255,.18);
+  --text: #f8f5ff;
+  --muted: #aaa2ba;
+  background:
+    radial-gradient(ellipse at 78% 4%, rgba(116,75,205,.20), transparent 38%),
+    radial-gradient(ellipse at 12% 55%, rgba(84,73,160,.14), transparent 42%),
+    #090711 !important;
+  color: #f8f5ff;
+}
+body:has(.app-shell[data-theme="white"]) .app-shell .app-footer,
+body:has(.app-shell[data-theme="white"]) .app-shell .sidebar-version,
+body:has(.app-shell[data-theme="white"]) .app-shell .side-caption {
+  color: #737786;
+}
+body:has(.app-shell[data-theme="white"]) .app-shell .topbar-status,
+body:has(.app-shell[data-theme="white"]) .app-shell .quiet-empty {
+  color: #737786;
+}
+body:has(.app-shell[data-theme="white"]) .app-shell .mobile-nav {
+  background: rgba(255,255,255,.96);
+  border-color: rgba(28,32,48,.12);
+  box-shadow: 0 10px 30px rgba(36,39,62,.10);
+}
+body:has(.app-shell[data-theme="glass"]) .app-shell .mobile-nav {
+  background: rgba(26,22,40,.68);
+  border-color: rgba(224,211,255,.20);
+  backdrop-filter: blur(12px) saturate(135%);
+  -webkit-backdrop-filter: blur(12px) saturate(135%);
+}
