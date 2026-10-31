@@ -1200,6 +1200,7 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
             <span className="topbar-brand-copy"><strong>Connectly</strong><small>YOUR PRIVATE SOCIAL SPACE</small></span>
           </a>
           <div className="topbar-actions">
+            <button type="button" className="topbar-icon-button" aria-label="Photo sharing coming next" title="Photo sharing is coming next" disabled>▣</button>
             <button type="button" className="topbar-icon-button" aria-label="Search chats" title="Search chats" onClick={() => { setTab('chats'); setShowInboxSearch((value) => !value) }}>⌕</button>
             <button type="button" className="topbar-icon-button" aria-label="More options" title="More options" onClick={() => setMoreMenuOpen((value) => !value)}>⋮</button>
             {moreMenuOpen && <div className="topbar-more-menu">
@@ -1374,7 +1375,10 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
                 <button type="button" className={`composer-action-button ${emojiOpen ? 'active' : ''}`} aria-label="Emoji" title="Emoji" onClick={() => setEmojiOpen((value) => !value)}>☺</button>
                 <input value={chatDraft} onChange={(event) => setChatDraft(event.target.value)} maxLength={5000} placeholder="Message" aria-label="Message" />
                 <button type="button" className="composer-action-button" aria-label="Attachments" title="Photo and file sharing is coming next" disabled>⌁</button>
-                <button type="submit" className="composer-send-button" aria-label="Send message" title="Send message" disabled={chatBusy || !chatDraft.trim()}>{chatBusy ? '…' : '➤'}</button>
+                <button type="button" className="composer-action-button" aria-label="Camera" title="Camera sharing is coming next" disabled>▣</button>
+                {chatDraft.trim()
+                  ? <button type="submit" className="composer-send-button" aria-label="Send message" title="Send message" disabled={chatBusy}>{chatBusy ? '…' : '➤'}</button>
+                  : <button type="button" className="composer-mic-button" aria-label="Voice messages coming next" title="Voice messages are coming next" disabled>♩</button>}
               </form>
             </section>
           </>}
