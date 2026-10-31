@@ -17,7 +17,7 @@ android {
         targetSdk 34
         versionCode 1
         versionName '1.0.0'
-        buildConfigField 'String', 'CONNECTLY_WEB_URL', "\"\${connectlyWebUrl}\""
+        buildConfigField 'String', 'CONNECTLY_WEB_URL', '"' + connectlyWebUrl + '"'
     }
 
     buildFeatures {
