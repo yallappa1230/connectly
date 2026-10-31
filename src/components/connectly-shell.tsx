@@ -47,6 +47,7 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
   const [newChatOpen, setNewChatOpen] = useState(false)
   const [chatMenuFor, setChatMenuFor] = useState<string | null>(null)
   const [emojiOpen, setEmojiOpen] = useState(false)
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false)
   const searchInputRef = useRef<HTMLInputElement | null>(null)
   const [selectedPerson, setSelectedPerson] = useState<Profile | null>(null)
   const [profile, setProfile] = useState<Profile>(initialProfile ?? emptyProfile)
@@ -1054,69 +1055,98 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
             <span className="topbar-brand-copy"><strong>Connectly</strong><small>YOUR PRIVATE SOCIAL SPACE</small></span>
           </a>
           <div className="topbar-actions">
-            
-            <span className="topbar-status"><i className="status-dot" /> Secure</span>
-            <button type="button" className="topbar-avatar" onClick={() => setTab('profile')} aria-label="Open profile">{initialOf(profile)}</button>
+            <button type="button" className="topbar-icon-button" aria-label="Search chats" title="Search chats" onClick={() => { setTab('chats'); setShowInboxSearch((value) => !value) }}>⌕</button>
+            <button type="button" className="topbar-icon-button" aria-label="More options" title="More options" onClick={() => setMoreMenuOpen((value) => !value)}>⋮</button>
+            {moreMenuOpen && <div className="topbar-more-menu">
+              <button type="button" onClick={() => { setNewChatOpen(true); setMoreMenuOpen(false) }}>New chat</button>
+              <button type="button" onClick={() => { setTab('profile'); setMoreMenuOpen(false) }}>Settings & profile</button>
+              <button type="button" onClick={() => { setMoreMenuOpen(false); void signOut() }}>Sign out</button>
+            </div>}
+            <button type="button" className="topbar-avatar" onClick={() => setTab('profile')} aria-label="Open profile">
+              {profile.avatar_url ? <img src={profile.avatar_url} alt="" /> : initialOf(profile)}
+            </button>
           </div>
         </header>
         {(message || error) && <div className={`global-feedback ${error ? 'feedback-error' : 'feedback-success'}`} role="status">{error || message}<button onClick={clearFeedback} aria-label="Dismiss message">×</button></div>}
 
-        {tab === 'chats' && <section className="inbox-layout">
+        {tab === 'chats' && <section className="inbox-layout whatsapp-inbox">
           {!activeChatId ? <>
-            <section className="inbox-welcome">
-              <div>
-                <p className="eyebrow">A LITTLE CLOSER, EVERY DAY</p>
-                <h2>Hi, <span>{firstName}</span> 👋</h2>
-                <p>Stay connected with your people.</p>
-              </div>
-              <div className="welcome-orb" aria-hidden="true"><span>✦</span></div>
-            </section>
-
-            <div className="inbox-title-row">
+            <div className="inbox-title-row whatsapp-title-row">
               <div><p className="eyebrow">YOUR MESSAGES</p><h3>Chats <span className="chat-total">{chats.length}</span></h3></div>
+              <button type="button" className="inbox-camera-action" aria-label="Open profile options" title="More options" onClick={() => setMoreMenuOpen((value) => !value)}>⋮</button>
             </div>
 
-            <label className="inbox-search glass-panel">
-              <span aria-hidden="true">⌕</span>
-              <input value={chatSearch} onChange={(event) => setChatSearch(event.target.value)} placeholder="Search chats, friends…" aria-label="Search chats and friends" />
-              {chatSearch && <button type="button" onClick={() => setChatSearch('')} aria-label="Clear search">×</button>}
-            </label>
+            <div className="inbox-filter-chips" role="tablist" aria-label="Filter chats">
+              {([
+                ['all', 'All'],
+                ['unread', 'Unread'],
+                ['favorites', 'Favorites'],
+                ['groups', 'Groups'],
+              ] as [InboxFilter, string][]).map(([value, label]) => <button
+                type="button"
+                role="tab"
+                aria-selected={inboxFilter === value}
+                className={`inbox-filter-chip ${inboxFilter === value ? 'active' : ''}`}
+                key={value}
+                onClick={() => setInboxFilter(value)}
+              >{label}</button>)}
+            </div>
 
-            <div className="inbox-list" aria-live="polite">
-              {filteredChats.map((chat) => <button key={chat.conversationId} type="button" className="inbox-chat-row" onClick={() => void selectChat(chat)}>
-                <span className="inbox-avatar">{initialOf(chat.person)}</span>
-                <span className="inbox-chat-copy">
-                  <strong>{nameOf(chat.person)}</strong>
-                  <small>{chat.lastMessage || 'Start the conversation'}</small>
-                </span>
-                <span className="inbox-chat-meta"><span className="inbox-chevron">›</span></span>
-              </button>)}
+            {showInboxSearch && <label className="inbox-search glass-panel whatsapp-search">
+              <span aria-hidden="true">⌕</span>
+              <input ref={searchInputRef} value={chatSearch} onChange={(event) => setChatSearch(event.target.value)} placeholder="Search name or message…" aria-label="Search chats" />
+              {chatSearch && <button type="button" onClick={() => setChatSearch('')} aria-label="Clear search">×</button>}
+            </label>}
+
+            <div className="inbox-list whatsapp-chat-list" aria-live="polite">
+              {filteredChats.map((chat) => <article className="whatsapp-chat-row" key={chat.conversationId}>
+                <button type="button" className="whatsapp-chat-main" onClick={() => void selectChat(chat)}>
+                  <span className={`inbox-avatar whatsapp-chat-avatar ${chat.isGroup ? 'group-avatar' : ''}`}>
+                    {!chat.isGroup && chat.person?.avatar_url ? <img src={chat.person.avatar_url} alt="" /> : chat.isGroup ? '♧' : initialOf(chat.person)}
+                  </span>
+                  <span className="inbox-chat-copy">
+                    <strong>{chat.isGroup ? (chat.title || 'Group chat') : nameOf(chat.person)}</strong>
+                    <small>{chat.lastMessage ? `${chat.lastSenderId === userId ? 'You: ' : ''}${chat.lastMessage}` : 'Start the conversation'}</small>
+                  </span>
+                  <span className="inbox-chat-meta whatsapp-chat-meta">
+                    <time>{chat.lastAt ? formatChatTime(chat.lastAt) : ''}</time>
+                    <span className="chat-meta-indicators">
+                      {chat.isMuted && <span className="chat-muted-indicator" title="Muted">♩̸</span>}
+                      {chat.isFavorite && <span className="chat-favorite-indicator" title="Favorite">★</span>}
+                      {chat.unreadCount > 0 && <b className="chat-unread-count">{chat.unreadCount > 99 ? '99+' : chat.unreadCount}</b>}
+                    </span>
+                  </span>
+                </button>
+                <button type="button" className={`chat-row-star ${chat.isFavorite ? 'selected' : ''}`} onClick={() => void setConversationFlag(chat, 'is_favorite')} aria-label={chat.isFavorite ? 'Remove from favorites' : 'Add to favorites'} title={chat.isFavorite ? 'Unfavorite' : 'Favorite'}>{chat.isFavorite ? '★' : '☆'}</button>
+                <div className="chat-row-menu-wrap">
+                  <button type="button" className="chat-row-menu-button" onClick={() => setChatMenuFor(chatMenuFor === chat.conversationId ? null : chat.conversationId)} aria-label="Chat options" title="Chat options">⋮</button>
+                  {chatMenuFor === chat.conversationId && <div className="chat-row-menu">
+                    <button type="button" onClick={() => void setConversationFlag(chat, 'is_favorite')}>{chat.isFavorite ? 'Remove favorite' : 'Add to favorites'}</button>
+                    <button type="button" onClick={() => void setConversationFlag(chat, 'is_muted')}>{chat.isMuted ? 'Unmute chat' : 'Mute chat'}</button>
+                    <button type="button" onClick={() => { setChatMenuFor(null); void selectChat(chat) }}>Open chat</button>
+                  </div>}
+                </div>
+              </article>)}
               {!filteredChats.length && <div className="inbox-empty glass-panel">
-                <div className="inbox-empty-icon">✉</div>
-                <h4>{chatSearch ? 'No matching chats' : 'Your inbox is ready'}</h4>
-                <p>{chatSearch ? 'Try another name or message.' : 'Start a conversation with someone in your friends list.'}</p>
+                <div className="inbox-empty-icon">{inboxFilter === 'favorites' ? '★' : inboxFilter === 'groups' ? '♧' : '✉'}</div>
+                <h4>{chatSearch ? 'No matching chats' : inboxFilter === 'unread' ? 'All caught up' : inboxFilter === 'favorites' ? 'No favorite chats yet' : inboxFilter === 'groups' ? 'No group conversations yet' : 'Your inbox is ready'}</h4>
+                <p>{chatSearch ? 'Try another name or message.' : inboxFilter === 'unread' ? 'New messages will appear here.' : inboxFilter === 'favorites' ? 'Star a chat to keep it easy to find.' : inboxFilter === 'groups' ? 'Group conversations will appear here when created.' : 'Start a conversation with someone in your friends list.'}</p>
               </div>}
             </div>
 
-            <section className="inbox-friends-section">
-              <div className="inbox-friends-heading">
-                <div><p className="eyebrow">YOUR CIRCLE</p><h3>Friends <span className="chat-total">{friends.length}</span></h3></div>
-                <span className="small-text muted">Accepted connections</span>
-              </div>
-              {friends.length ? <div className="inbox-friends-list">
-                {friends.map((friend) => <button type="button" className="inbox-friend-row inbox-friend-profile-button" key={friend.requestId} onClick={() => void showPersonDetails(friend.person)} aria-label={`Open ${nameOf(friend.person)} profile`}>
-                  <span className="inbox-avatar">{friend.person.avatar_url ? <img src={friend.person.avatar_url} alt="" /> : initialOf(friend.person)}</span>
-                  <span className="inbox-friend-copy"><strong>{nameOf(friend.person)}</strong><small>@{friend.person.username}</small></span>
-                  <span className="friend-profile-hint">View profile ›</span>
-                </button>)}
-              </div> : <div className="inbox-friends-empty">Your accepted friends will appear here.</div>}
-            </section>
-
-            <section className="inbox-people-tools">
-              <section className="inbox-requests-inline">
-                <div className="inbox-friends-heading">
-                  <div><p className="eyebrow">YOUR INBOX</p><h3>Received requests <span className="chat-total">{incoming.length}</span></h3></div>
-                </div>
+            <button type="button" className="whatsapp-compose-fab" aria-label="New chat" title="New chat" onClick={() => setNewChatOpen(true)}>＋</button>
+            <section className="inbox-people-tools whatsapp-social-tools">
+              <details className="inbox-social-accordion">
+                <summary>Friends <span>{friends.length}</span></summary>
+                {friends.length ? <div className="inbox-friends-list">
+                  {friends.map((friend) => <button type="button" className="inbox-friend-row inbox-friend-profile-button" key={friend.requestId} onClick={() => void showPersonDetails(friend.person)} aria-label={`Open ${nameOf(friend.person)} profile`}>
+                    <span className="inbox-avatar">{friend.person.avatar_url ? <img src={friend.person.avatar_url} alt="" /> : initialOf(friend.person)}</span>
+                    <span className="inbox-friend-copy"><strong>{nameOf(friend.person)}</strong><small>@{friend.person.username}</small></span><span className="friend-profile-hint">View profile ›</span>
+                  </button>)}
+                </div> : <p className="inbox-people-empty">Your accepted friends will appear here.</p>}
+              </details>
+              <details className="inbox-social-accordion">
+                <summary>Received requests <span>{incoming.length}</span></summary>
                 {incoming.length ? <div className="inbox-friends-list">
                   {incoming.map((request) => <article className="inbox-friend-row inbox-request-row" key={request.id}>
                     <span className="inbox-avatar">{request.person?.avatar_url ? <img src={request.person.avatar_url} alt="" /> : initialOf(request.person)}</span>
@@ -1125,29 +1155,23 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
                     <button type="button" className="button button-subtle" onClick={() => respond(request, 'declined')} disabled={busy}>Decline</button>
                   </article>)}
                 </div> : <p className="inbox-people-empty">No received requests right now.</p>}
-              </section>
-
-              <section className="inbox-discover-inline">
-                <div className="inbox-friends-heading">
-                  <div><p className="eyebrow">GROW YOUR CIRCLE</p><h3>Find friends</h3></div>
-                  <span className="small-text muted">Search usernames</span>
-                </div>
+              </details>
+              <details className="inbox-social-accordion">
+                <summary>Find people</summary>
                 <form className="search-bar glass-panel" onSubmit={searchPeople}>
                   <span className="search-symbol">⌕</span>
                   <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search username…" aria-label="Search username" />
                   <button className="button button-primary" type="submit" disabled={busy}>{busy ? 'Searching…' : 'Search'}</button>
                 </form>
-                {results.length ? <div className="inbox-friends-list inbox-search-results">
+                {results.length > 0 && <div className="inbox-friends-list inbox-search-results">
                   {results.map((person) => <article className="inbox-friend-row" key={person.id}>
                     <span className="inbox-avatar">{person.avatar_url ? <img src={person.avatar_url} alt="" /> : initialOf(person)}</span>
                     <span className="inbox-friend-copy"><strong>{nameOf(person)}</strong><small>@{person.username}</small></span>
                     <button type="button" className="button button-primary" onClick={() => void sendRequest(person)} disabled={busy}>Add friend</button>
-                    <button type="button" className="icon-button danger-icon" aria-label={`Block ${nameOf(person)}`} title="Block" onClick={() => void blockPerson(person)} disabled={busy}>⊘</button>
                   </article>)}
-                </div> : <p className="inbox-people-empty">{query.trim().length >= 2 ? 'No matching people found.' : 'Search by username to find people on Connectly.'}</p>}
-              </section>
+                </div>}
+              </details>
             </section>
-
           </> : <>
             <section className="conversation-screen">
               <header className="conversation-topbar">
