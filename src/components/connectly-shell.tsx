@@ -1,6 +1,6 @@
 'use client'
 
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
 type Profile = { id: string; username: string; full_name: string | null; avatar_url: string | null; created_at?: string }
@@ -12,6 +12,11 @@ type MessageRow = { id: string; conversation_id: string; sender_id: string; cont
 type ChatSummary = { conversationId: string; person: Profile; lastMessage?: string; lastAt?: string }
 type Tab = 'discover'|'chats'|'profile'
 type Theme = 'black'|'white'|'glass'
+type CallMode = 'audio'|'video'
+type CallPhase = 'incoming'|'calling'|'connecting'|'active'
+type CallView = { callId: string; person: Profile; mode: CallMode; phase: CallPhase; direction: 'incoming'|'outgoing' }
+type IncomingCallPayload = { callId: string; from: string; to: string; mode: CallMode; offer: RTCSessionDescriptionInit }
+type CallSignalPayload = { callId: string; from: string; to: string; kind: 'answer'|'ice'|'end'; sdp?: RTCSessionDescriptionInit; candidate?: RTCIceCandidateInit }
 
 const emptyProfile: Profile = { id: '', username: '', full_name: '', avatar_url: null }
 const nameOf = (p?: Profile | null) => p?.full_name?.trim() || (p?.username ? `@${p.username}` : 'Connectly member')
@@ -42,6 +47,23 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [callState, setCallState] = useState<CallView | null>(null)
+  const [callError, setCallError] = useState('')
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null)
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null)
+  const [callMuted, setCallMuted] = useState(false)
+  const [cameraEnabled, setCameraEnabled] = useState(true)
+  const callStateRef = useRef<CallView | null>(null)
+  const incomingOfferRef = useRef<IncomingCallPayload | null>(null)
+  const callPeerRef = useRef<RTCPeerConnection | null>(null)
+  const callMediaRef = useRef<MediaStream | null>(null)
+  const callChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
+  const pendingRemoteIceRef = useRef<RTCIceCandidateInit[]>([])
+  const pendingLocalIceRef = useRef<RTCIceCandidateInit[]>([])
+  const remotePeerReadyRef = useRef(false)
+  const localVideoRef = useRef<HTMLVideoElement | null>(null)
+  const remoteVideoRef = useRef<HTMLVideoElement | null>(null)
+  const callTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const refreshChats = useCallback(async () => {
     const { data: memberships, error: memberError } = await supabase
@@ -351,7 +373,6 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
       if (membershipError && membershipError.code !== '23505') throw membershipError
 
       setActiveChatId(conversation.id)
-      setNewChatOpen(false)
       setTab('chats')
       await refreshChats()
       await loadChatMessages(conversation.id)
