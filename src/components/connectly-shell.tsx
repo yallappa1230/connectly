@@ -2098,6 +2098,16 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
             </div>
             <p className="muted small-text">QR codes expire after 10 minutes and can be used once. You can revoke an unused code by generating a replacement.</p>
           </div>
+          <div className="form-panel glass-panel blocked-users-panel">
+            <div className="section-heading"><div><p className="eyebrow">SAFETY CENTRE</p><h3>Blocked accounts <span className="chat-total">{blocks.length}</span></h3><p className="muted small-text">Blocked people cannot send friend requests or contact you through Connectly.</p></div></div>
+            {blocks.length ? <div className="blocked-users-list">
+              {blocks.map((block) => <div className="blocked-user-row" key={block.blocked_id}>
+                <span className="inbox-avatar">{block.person?.avatar_url ? <img src={block.person.avatar_url} alt="" /> : initialOf(block.person)}</span>
+                <span><strong>{nameOf(block.person)}</strong><small>@{block.person?.username || 'profile unavailable'}</small></span>
+                <button type="button" className="button button-subtle" onClick={() => void unblockPerson(block)} disabled={busy}>Unblock</button>
+              </div>)}
+            </div> : <p className="inbox-people-empty">You have not blocked anyone.</p>}
+          </div>
           <div className="form-panel glass-panel">
             <div className="section-heading"><div><p className="eyebrow">YOUR SAVED CONTENT</p><h3>Connectly Notes</h3><p className="muted small-text">Messages you save from any chat, kept in one private list.</p></div></div>
             <button type="button" className="button button-subtle button-wide" onClick={() => void loadSavedMessages()}>Open saved messages</button>
