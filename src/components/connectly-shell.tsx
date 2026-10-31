@@ -1076,6 +1076,8 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
               </div>
               <div className="person-profile-actions">
                 <button type="button" className="button button-primary" onClick={() => { const person = selectedPerson; setSelectedPerson(null); void openChat(person) }} disabled={chatBusy}>Message</button>
+                <button type="button" className="button button-subtle" onClick={() => { const person = selectedPerson; setSelectedPerson(null); void startCall(person, 'audio') }} disabled={!!callState}>Audio call</button>
+                <button type="button" className="button button-subtle" onClick={() => { const person = selectedPerson; setSelectedPerson(null); void startCall(person, 'video') }} disabled={!!callState}>Video call</button>
                 <button type="button" className="button button-subtle" onClick={() => {
                   const friend = friends.find((item) => item.person.id === selectedPerson.id)
                   if (friend) {
@@ -1114,6 +1116,40 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
 
         <footer className="app-footer"><span>CONNECTLY</span><span>Made for meaningful connections</span><span>PHASE 01 · AUTH & FRIENDS</span></footer>
       </section>
+      {callError && !callState && <div className="call-toast" role="status">
+        <span>{callError}</span><button type="button" onClick={() => setCallError('')} aria-label="Dismiss call message">×</button>
+      </div>}
+      {callState && <div className="call-overlay" role="dialog" aria-modal="true" aria-label={callState.mode === 'video' ? 'Video call' : 'Audio call'}>
+        <section className="call-window glass-panel">
+          <header className="call-window-header">
+            <div><p className="eyebrow">{callState.mode === 'video' ? 'CONNECTLY VIDEO' : 'CONNECTLY VOICE'}</p><h3>{callState.phase === 'incoming' ? 'Incoming call' : callState.phase === 'calling' ? 'Calling…' : callState.phase === 'connecting' ? 'Connecting…' : 'In call'}</h3></div>
+            <span className="secure-chip"><i /> Private call</span>
+          </header>
+          <div className={`call-stage ${callState.mode === 'video' ? 'video-mode' : 'audio-mode'}`}>
+            {callState.mode === 'video' && remoteStream
+              ? <video ref={remoteVideoRef} className="call-remote-video" autoPlay playsInline />
+              : <div className="call-person-stage">
+                  <div className="call-person-avatar">{callState.person.avatar_url ? <img src={callState.person.avatar_url} alt="" /> : initialOf(callState.person)}</div>
+                  <strong>{nameOf(callState.person)}</strong>
+                  <small>{callState.phase === 'incoming' ? 'Wants to talk with you' : callState.phase === 'calling' ? 'Waiting for them to answer' : callState.phase === 'connecting' ? 'Setting up your connection' : 'Connected'}</small>
+                </div>}
+            {callState.mode === 'video' && <video ref={localVideoRef} className="call-local-preview" autoPlay muted playsInline />}
+            {callState.mode === 'audio' && <video ref={remoteVideoRef} className="call-audio-sink" autoPlay playsInline />}
+          </div>
+          {callError && <p className="call-inline-error">{callError}</p>}
+          <div className="call-controls">
+            {callState.phase === 'incoming' ? <>
+              <button type="button" className="call-control call-control-accept" onClick={() => void acceptIncomingCall()}><span>✓</span><small>Accept</small></button>
+              <button type="button" className="call-control call-control-end" onClick={() => void declineIncomingCall()}><span>×</span><small>Decline</small></button>
+            </> : <>
+              <button type="button" className={`call-control ${callMuted ? 'is-off' : ''}`} onClick={toggleCallMicrophone}><span>{callMuted ? '×' : '♬'}</span><small>{callMuted ? 'Unmute' : 'Mute'}</small></button>
+              {callState.mode === 'video' && <button type="button" className={`call-control ${cameraEnabled ? '' : 'is-off'}`} onClick={toggleCallCamera}><span>{cameraEnabled ? '◉' : '⊘'}</span><small>{cameraEnabled ? 'Camera off' : 'Camera on'}</small></button>}
+              <button type="button" className="call-control call-control-end" onClick={() => void endCall()}><span>×</span><small>{callState.phase === 'calling' ? 'Cancel' : 'End call'}</small></button>
+            </>}
+          </div>
+          <p className="call-privacy-note">Camera and microphone are used only while this call is active. Connectly does not record calls.</p>
+        </section>
+      </div>}
       <nav className="mobile-nav" aria-label="Mobile navigation">{navItems.map((item) => <button key={item.id} className={tab === item.id ? 'active' : ''} onClick={() => setTab(item.id)}><span>{item.icon}</span><small>{item.label}</small>{item.count ? <i>{item.count}</i> : null}</button>)}</nav>
     </main>
   )
