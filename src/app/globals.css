@@ -993,3 +993,223 @@ body:has(.app-shell[data-theme="glass"]) .app-shell .mobile-nav {
   backdrop-filter: blur(12px) saturate(135%);
   -webkit-backdrop-filter: blur(12px) saturate(135%);
 }
+
+
+/* Friends live inside the Chats workspace; no separate Friends destination. */
+.inbox-friends-section {
+  display: grid;
+  gap: 11px;
+  margin-top: 10px;
+}
+.inbox-friends-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+}
+.inbox-friends-heading h3 {
+  margin: 2px 0 0;
+  color: var(--app-text);
+  font: 800 20px Manrope,sans-serif;
+  letter-spacing: -.5px;
+}
+.inbox-friends-list {
+  display: grid;
+  border-top: 1px solid var(--app-line);
+}
+.inbox-friend-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 70px;
+  padding: 9px 2px;
+  border-bottom: 1px solid var(--app-line);
+}
+.inbox-avatar img,
+.inbox-friend-row img,
+.person-profile-photo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+.inbox-friend-copy {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 4px;
+}
+.inbox-friend-copy strong {
+  overflow: hidden;
+  color: var(--app-text);
+  font: 700 11px Manrope,sans-serif;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inbox-friend-copy small { color: var(--app-muted); font-size: 9px; }
+.inbox-friend-row .button { min-height: 34px; padding: 7px 11px; }
+.inbox-friend-row .icon-button { width: 32px; min-width: 32px; height: 32px; }
+.inbox-friends-empty {
+  padding: 19px 14px;
+  border: 1px solid var(--app-line);
+  border-radius: 14px;
+  color: var(--app-muted);
+  background: var(--app-panel);
+  font-size: 10px;
+  line-height: 1.7;
+}
+.inbox-friends-empty .text-button { margin-left: 5px; }
+
+/* Appearance has moved into Profile settings. */
+.profile-theme-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0,1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+.profile-theme-option {
+  display: grid;
+  grid-template-columns: 36px minmax(0,1fr) auto;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  min-height: 67px;
+  padding: 10px;
+  border: 1px solid var(--app-line);
+  border-radius: 13px;
+  color: var(--app-text);
+  background: var(--app-panel-strong);
+  text-align: left;
+}
+.profile-theme-option.selected {
+  border-color: color-mix(in srgb, var(--app-accent) 62%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--app-accent) 13%, transparent);
+}
+.profile-theme-option > span:nth-child(2) { display: grid; min-width: 0; gap: 4px; }
+.profile-theme-option strong { font-size: 10px; }
+.profile-theme-option small { color: var(--app-muted); font-size: 8px; }
+.profile-theme-option b { color: var(--app-accent); font-size: 12px; }
+.theme-preview {
+  display: block;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--app-line);
+  border-radius: 11px;
+}
+.theme-preview-black { background: linear-gradient(145deg,#050507,#22232a); }
+.theme-preview-white { background: linear-gradient(145deg,#fff,#e7e8ef); }
+.theme-preview-glass {
+  background: linear-gradient(135deg,rgba(183,151,255,.85),rgba(255,255,255,.20) 45%,rgba(43,32,72,.8)),#171322;
+  box-shadow: inset 0 1px rgba(255,255,255,.7);
+}
+.appearance-panel .section-heading { margin-bottom: 0; }
+
+/* Clickable chat identity and accepted-friend profile card. */
+.conversation-person-button {
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 13px;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.conversation-person-button:hover,
+.conversation-person-button:focus-visible {
+  outline: none;
+  border-color: var(--app-line);
+  background: color-mix(in srgb, var(--app-accent) 9%, transparent);
+}
+.conversation-person-button > span:last-child { display: grid; gap: 4px; min-width: 0; }
+.conversation-person-button strong {
+  overflow: hidden;
+  color: var(--app-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.conversation-person-button small {
+  overflow: hidden;
+  color: var(--app-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.person-profile-modal {
+  width: min(100%, 410px);
+  max-height: min(82svh, 650px);
+  overflow-y: auto;
+  padding: 20px;
+  border: 1px solid var(--app-line);
+  border-radius: 22px;
+  color: var(--app-text);
+  background: var(--app-panel-strong);
+  box-shadow: var(--app-shadow);
+}
+.person-profile-identity {
+  display: grid;
+  justify-items: center;
+  gap: 7px;
+  padding: 20px 8px 17px;
+  text-align: center;
+}
+.person-profile-photo {
+  display: grid;
+  place-items: center;
+  width: 92px;
+  height: 92px;
+  overflow: hidden;
+  border: 2px solid color-mix(in srgb, var(--app-accent) 56%, var(--app-line));
+  border-radius: 50%;
+  color: var(--app-text);
+  background: linear-gradient(145deg,color-mix(in srgb,var(--app-accent) 35%,var(--app-panel)),var(--app-panel-strong));
+  box-shadow: 0 8px 28px color-mix(in srgb,var(--app-accent) 15%,transparent);
+  font: 800 30px Manrope,sans-serif;
+}
+.person-profile-identity h4 {
+  margin: 5px 0 0;
+  color: var(--app-text);
+  font: 800 19px Manrope,sans-serif;
+}
+.person-profile-identity p { margin: 0; color: var(--app-muted); font-size: 11px; }
+.accepted-friend-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 6px 10px;
+  border: 1px solid rgba(60,190,137,.18);
+  border-radius: 20px;
+  color: #35a879;
+  background: rgba(60,190,137,.08);
+  font-size: 9px;
+  font-weight: 700;
+}
+.accepted-friend-label i { width: 6px; height: 6px; border-radius: 50%; background: #35bf88; }
+.person-profile-fields {
+  display: grid;
+  gap: 1px;
+  margin: 5px 0 17px;
+  overflow: hidden;
+  border: 1px solid var(--app-line);
+  border-radius: 13px;
+  background: var(--app-line);
+}
+.person-profile-fields > div {
+  display: grid;
+  gap: 4px;
+  padding: 12px 13px;
+  background: var(--app-panel);
+}
+.person-profile-fields small { color: var(--app-muted); font-size: 9px; }
+.person-profile-fields strong { color: var(--app-text); font-size: 11px; overflow-wrap: anywhere; }
+
+@media (max-width: 680px) {
+  .profile-theme-options { grid-template-columns: 1fr; }
+  .profile-theme-option { min-height: 59px; }
+  .inbox-friend-row { gap: 7px; }
+  .inbox-friend-row .inbox-avatar { width: 39px; height: 39px; min-width: 39px; font-size: 13px; }
+  .inbox-friend-row .button { min-height: 32px; padding: 6px 9px; font-size: 9px; }
+  .inbox-friend-row .icon-button { width: 29px; min-width: 29px; height: 29px; }
+}
