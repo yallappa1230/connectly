@@ -26,9 +26,12 @@ type ChatSummary = {
   unreadCount: number
   isFavorite: boolean
   isMuted: boolean
+  isPinned: boolean
+  isArchived: boolean
 }
-type ConversationSetting = { conversation_id: string; is_favorite: boolean; is_muted: boolean; last_read_at: string | null }
-type InboxFilter = 'all'|'unread'|'favorites'|'groups'
+type ConversationSetting = { conversation_id: string; is_favorite: boolean; is_muted: boolean; is_pinned: boolean; is_archived: boolean; last_read_at: string | null }
+type ConnectlyTask = { id: string; user_id: string; conversation_id: string; message_id: string | null; title: string; due_at: string | null; status: 'open'|'done'; created_at: string }
+type InboxFilter = 'all'|'unread'|'favorites'|'pinned'|'groups'|'archived'
 type Tab = 'chats'|'updates'|'communities'|'calls'|'profile'
 type Theme = 'black'|'white'|'glass'
 type CallMode = 'audio'|'video'
@@ -72,6 +75,8 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
   const [inboxFilter, setInboxFilter] = useState<InboxFilter>('all')
   const [chatSettings, setChatSettings] = useState<Record<string, ConversationSetting>>({})
   const [showInboxSearch, setShowInboxSearch] = useState(false)
+  const [messageSearchOpen, setMessageSearchOpen] = useState(false)
+  const [messageSearch, setMessageSearch] = useState('')
   const [newChatOpen, setNewChatOpen] = useState(false)
   const [newGroupMode, setNewGroupMode] = useState(false)
   const [groupTitle, setGroupTitle] = useState('')
@@ -87,6 +92,12 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
   const [savedMessageIds, setSavedMessageIds] = useState<string[]>([])
   const [savedMessagesOpen, setSavedMessagesOpen] = useState(false)
   const [savedMessages, setSavedMessages] = useState<SavedMessageRow[]>([])
+  const [tasksOpen, setTasksOpen] = useState(false)
+  const [tasks, setTasks] = useState<ConnectlyTask[]>([])
+  const [taskSourceMessage, setTaskSourceMessage] = useState<MessageRow | null>(null)
+  const [taskTitle, setTaskTitle] = useState('')
+  const [taskDueAt, setTaskDueAt] = useState('')
+  const [taskBusy, setTaskBusy] = useState(false)
   const [reactionMenuFor, setReactionMenuFor] = useState<string | null>(null)
   const [mediaMenuOpen, setMediaMenuOpen] = useState(false)
   const [uploadingMedia, setUploadingMedia] = useState(false)
@@ -177,7 +188,7 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
         .order('created_at', { ascending: false })
         .limit(250),
       supabase.from('conversation_user_settings')
-        .select('conversation_id,is_favorite,is_muted,last_read_at')
+        .select('conversation_id,is_favorite,is_muted,is_pinned,is_archived,last_read_at')
         .eq('user_id', userId)
         .in('conversation_id', conversationIds),
     ])
@@ -229,8 +240,10 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
         unreadCount,
         isFavorite: preference?.is_favorite ?? false,
         isMuted: preference?.is_muted ?? false,
+        isPinned: preference?.is_pinned ?? false,
+        isArchived: preference?.is_archived ?? false,
       }]
-    }).sort((a, b) => (b.lastAt ?? '').localeCompare(a.lastAt ?? ''))
+    }).sort((a, b) => Number(b.isPinned) - Number(a.isPinned) || (b.lastAt ?? '').localeCompare(a.lastAt ?? ''))
 
     setChats(summaries)
   }, [supabase, userId])
@@ -1525,13 +1538,17 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
       || usernameMatch
   })
   const filteredChats = searchedChats.filter((chat) => {
+    if (inboxFilter === 'archived') return chat.isArchived
+    if (chat.isArchived) return false
     if (inboxFilter === 'unread') return chat.unreadCount > 0
     if (inboxFilter === 'favorites') return chat.isFavorite
+    if (inboxFilter === 'pinned') return chat.isPinned
     if (inboxFilter === 'groups') return chat.isGroup
     return true
   })
   const activeChat = chats.find((chat) => chat.conversationId === activeChatId) ?? null
   const activeChatPerson = activeChat?.person ?? null
+  const visibleMessages = chatMessages.filter((item) => !messageSearch.trim() || item.content.toLowerCase().includes(messageSearch.trim().toLowerCase()))
 
   async function markChatRead(conversationId: string) {
     if (!privacySettings.read_receipts) return
