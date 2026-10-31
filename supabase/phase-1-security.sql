@@ -14,11 +14,13 @@ SELECT LEAST(sender_id, receiver_id) AS user_low,
 FROM public.friend_requests
 WHERE status = 'accepted';
 
+-- One active request or friendship per pair, independent of request direction.
 CREATE UNIQUE INDEX IF NOT EXISTS friend_requests_one_active_pair
   ON public.friend_requests (LEAST(sender_id, receiver_id), GREATEST(sender_id, receiver_id))
   WHERE status IN ('pending', 'accepted');
 
-CREATE UNIQUE INDEX IF NOT EXISTS profiles_username_ci_key ON public.profiles (lower(username));
+CREATE UNIQUE INDEX IF NOT EXISTS profiles_username_ci_key
+  ON public.profiles (lower(username));
 
 DO $$
 BEGIN
@@ -57,12 +59,6 @@ CREATE POLICY friend_requests_sender_insert
       SELECT 1 FROM public.user_blocks b
       WHERE (b.blocker_id = (SELECT auth.uid()) AND b.blocked_id = receiver_id)
          OR (b.blocker_id = receiver_id AND b.blocked_id = (SELECT auth.uid()))
-    )
-    AND NOT EXISTS (
-      SELECT 1 FROM public.friend_requests f
-      WHERE f.status IN ('pending', 'accepted')
-        AND LEAST(f.sender_id, f.receiver_id) = LEAST(sender_id, receiver_id)
-        AND GREATEST(f.sender_id, f.receiver_id) = GREATEST(sender_id, receiver_id)
     )
   );
 
@@ -107,6 +103,7 @@ CREATE POLICY user_blocks_owner_delete
   ON public.user_blocks FOR DELETE TO authenticated
   USING (blocker_id = (SELECT auth.uid()));
 
+-- A user blocked by another account cannot discover or read that account's profile.
 CREATE POLICY profiles_hide_blocked_users
   ON public.profiles AS RESTRICTIVE FOR SELECT TO authenticated
   USING (
@@ -133,6 +130,7 @@ REVOKE INSERT, DELETE, UPDATE ON TABLE public.profiles FROM anon, authenticated;
 GRANT SELECT ON TABLE public.profiles TO authenticated;
 GRANT UPDATE (username, full_name, avatar_url) ON TABLE public.profiles TO authenticated;
 
+-- Restrict message edits to content; identity and chat destination remain immutable.
 REVOKE INSERT, UPDATE ON TABLE public.messages FROM anon, authenticated;
 GRANT INSERT (conversation_id, sender_id, content) ON TABLE public.messages TO authenticated;
 GRANT UPDATE (content) ON TABLE public.messages TO authenticated;
@@ -192,6 +190,7 @@ CREATE POLICY "Leave or remove membership" ON public.conversation_members
 REVOKE ALL ON FUNCTION public.is_conversation_member(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.is_conversation_creator(uuid) FROM PUBLIC, anon, authenticated;
 
+-- Preserve trigger attachment while removing trigger functions from the exposed schema.
 DO $$
 BEGIN
   IF to_regprocedure('public.handle_new_user()') IS NOT NULL THEN
