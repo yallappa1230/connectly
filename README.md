@@ -143,3 +143,25 @@ This feature set is deployed against the Supabase project and its source is kept
 
 ### E2EE status
 **End-to-end encryption is still not enabled.** Message text is currently stored as readable content in PostgreSQL. HTTPS and RLS are not E2EE. The interface must not display an E2EE lock until a reviewed device-key protocol, key verification, encrypted attachment flow, key recovery and multi-device tests have been completed.
+
+
+## Current messaging preview on `phase-1-auth-friends`
+
+The current branch includes a WhatsApp-inspired mobile navigation with **Chats, Updates, Communities and Calls**. The profile and privacy centre is opened from the profile control.
+
+Messaging and inbox actions:
+- All, unread, favorites, pinned, groups and archived inbox filters.
+- Pin, unpin, archive, restore, mute, favorite and mark-read/unread actions on conversations.
+- Search chat names and latest previews from the inbox, plus search loaded message history inside an open conversation.
+- Direct and group chats, replies, reactions, saved messages, private media attachments and voice messages.
+- In-app audio/video call controls using WebRTC and Supabase Realtime signaling.
+
+Privacy and friend connections:
+- Privacy preferences, block/report controls, and an explicit security notice.
+- Friend QR codes are short-lived, one-time and revocable; the database stores the token hash rather than the raw token.
+- **End-to-end encryption is not enabled.** Message content is still readable by the service; do not present this preview as E2EE.
+
+Connectly-specific feature:
+- **Connectly Tasks** converts a chat message into a private task with an optional due date. Tasks are owned by the signed-in user and can be marked open or complete.
+
+Apply the additive migration in `supabase/connectly-inbox-and-tasks.sql` to any separate development database before deploying this branch there. It has already been applied to the connected Connectly Supabase project. Keep `main` unchanged while testing this branch.
