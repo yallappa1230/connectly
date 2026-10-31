@@ -68,6 +68,9 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
   const [chatSettings, setChatSettings] = useState<Record<string, ConversationSetting>>({})
   const [showInboxSearch, setShowInboxSearch] = useState(false)
   const [newChatOpen, setNewChatOpen] = useState(false)
+  const [newGroupMode, setNewGroupMode] = useState(false)
+  const [groupTitle, setGroupTitle] = useState('')
+  const [selectedGroupMembers, setSelectedGroupMembers] = useState<string[]>([])
   const [chatMenuFor, setChatMenuFor] = useState<string | null>(null)
   const [emojiOpen, setEmojiOpen] = useState(false)
   const [moreMenuOpen, setMoreMenuOpen] = useState(false)
@@ -448,6 +451,53 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
       await loadChatMessages(conversation.id)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not open this chat.')
+    } finally {
+      setChatBusy(false)
+    }
+  }
+
+  async function createGroup(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const title = groupTitle.trim()
+    const memberIds = [...new Set(selectedGroupMembers)].filter((id) => friends.some((friend) => friend.person.id === id))
+    if (title.length < 2 || title.length > 60) {
+      setError('Group name must be between 2 and 60 characters.')
+      return
+    }
+    if (!memberIds.length) {
+      setError('Choose at least one accepted friend.')
+      return
+    }
+
+    setChatBusy(true)
+    clearFeedback()
+    try {
+      const { data: conversation, error: createError } = await supabase
+        .from('conversations')
+        .insert({ title, is_group: true, created_by: userId })
+        .select('id')
+        .single()
+      if (createError) throw createError
+
+      const membershipsToAdd = memberIds.map((memberId) => ({
+        conversation_id: conversation.id,
+        user_id: memberId,
+      }))
+      const { error: memberError } = await supabase.from('conversation_members').insert(membershipsToAdd)
+      if (memberError) throw memberError
+
+      await refreshChats()
+      setActiveChatId(conversation.id)
+      setChatMessages([])
+      await markChatRead(conversation.id)
+      setNewChatOpen(false)
+      setNewGroupMode(false)
+      setGroupTitle('')
+      setSelectedGroupMembers([])
+      setTab('chats')
+      setMessage('Group created.')
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not create this group.')
     } finally {
       setChatBusy(false)
     }
@@ -975,6 +1025,8 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
         filter: `conversation_id=eq.${activeChatId}`,
       }, () => {
         void loadChatMessages(activeChatId)
+        void supabase.from('conversation_user_settings').update({ last_read_at: new Date().toISOString() })
+          .eq('conversation_id', activeChatId).eq('user_id', userId)
         void refreshChats()
       })
       .subscribe()
@@ -1289,16 +1341,31 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
 
         {newChatOpen && <div className="modal-scrim" role="presentation" onClick={() => setNewChatOpen(false)}>
           <section className="new-chat-modal glass-panel" role="dialog" aria-modal="true" aria-labelledby="new-chat-title" onClick={(event) => event.stopPropagation()}>
-            <div className="modal-heading"><div><p className="eyebrow">START A CONVERSATION</p><h3 id="new-chat-title">New chat</h3></div><button type="button" className="icon-button" onClick={() => setNewChatOpen(false)} aria-label="Close new chat">×</button></div>
-            <label className="inbox-search glass-panel"><span>⌕</span><input value={chatSearch} onChange={(event) => setChatSearch(event.target.value)} placeholder="Search your friends…" aria-label="Search friends" /></label>
-            {friends.filter((friend) => {
-              const term = chatSearch.trim().toLowerCase()
-              return !term || nameOf(friend.person).toLowerCase().includes(term) || friend.person.username.toLowerCase().includes(term)
-            }).map((friend) => <button type="button" className="new-chat-friend" key={friend.requestId} onClick={() => { setNewChatOpen(false); setChatSearch(''); void openChat(friend.person) }}>
-              <span className="inbox-avatar small">{friend.person.avatar_url ? <img src={friend.person.avatar_url} alt="" /> : initialOf(friend.person)}</span>
-              <span><strong>{nameOf(friend.person)}</strong><small>@{friend.person.username}</small></span><b>Message</b>
-            </button>)}
-            {!friends.length && <p className="quiet-empty">Accepted friends will appear here.</p>}
+            <div className="modal-heading"><div><p className="eyebrow">START A CONVERSATION</p><h3 id="new-chat-title">{newGroupMode ? 'New group' : 'New chat'}</h3></div><button type="button" className="icon-button" onClick={() => setNewChatOpen(false)} aria-label="Close new chat">×</button></div>
+            <div className="new-chat-mode-switch">
+              <button type="button" className={!newGroupMode ? 'selected' : ''} onClick={() => setNewGroupMode(false)}>New chat</button>
+              <button type="button" className={newGroupMode ? 'selected' : ''} onClick={() => setNewGroupMode(true)}>New group</button>
+            </div>
+            {newGroupMode ? <form className="stack-form group-create-form" onSubmit={createGroup}>
+              <label className="field-label">Group name<input value={groupTitle} onChange={(event) => setGroupTitle(event.target.value)} maxLength={60} minLength={2} placeholder="e.g. Nursing Friends" /></label>
+              <p className="eyebrow">ADD FRIENDS</p>
+              {friends.map((friend) => <label className="group-member-option" key={friend.requestId}>
+                <span className="inbox-avatar small">{friend.person.avatar_url ? <img src={friend.person.avatar_url} alt="" /> : initialOf(friend.person)}</span>
+                <span><strong>{nameOf(friend.person)}</strong><small>@{friend.person.username}</small></span>
+                <input type="checkbox" checked={selectedGroupMembers.includes(friend.person.id)} onChange={(event) => setSelectedGroupMembers((current) => event.target.checked ? [...current, friend.person.id] : current.filter((id) => id !== friend.person.id))} />
+              </label>)}
+              <button type="submit" className="button button-primary button-wide" disabled={chatBusy || !selectedGroupMembers.length}>{chatBusy ? 'Creating…' : 'Create group'}</button>
+            </form> : <>
+              <label className="inbox-search glass-panel"><span>⌕</span><input value={chatSearch} onChange={(event) => setChatSearch(event.target.value)} placeholder="Search your friends…" aria-label="Search friends" /></label>
+              {friends.filter((friend) => {
+                const term = chatSearch.trim().toLowerCase()
+                return !term || nameOf(friend.person).toLowerCase().includes(term) || friend.person.username.toLowerCase().includes(term)
+              }).map((friend) => <button type="button" className="new-chat-friend" key={friend.requestId} onClick={() => { setNewChatOpen(false); setChatSearch(''); void openChat(friend.person) }}>
+                <span className="inbox-avatar small">{friend.person.avatar_url ? <img src={friend.person.avatar_url} alt="" /> : initialOf(friend.person)}</span>
+                <span><strong>{nameOf(friend.person)}</strong><small>@{friend.person.username}</small></span><b>Message</b>
+              </button>)}
+              {!friends.length && <p className="quiet-empty">Accepted friends will appear here.</p>}
+            </>}
           </section>
         </div>}
 
