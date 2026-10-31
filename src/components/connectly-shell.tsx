@@ -7,7 +7,10 @@ type Profile = { id: string; username: string; full_name: string | null; avatar_
 type RequestRow = { id: string; sender_id: string; receiver_id: string; status: 'pending'|'accepted'|'declined'|'cancelled'; created_at: string; person?: Profile }
 type FriendRow = { requestId: string; person: Profile }
 type BlockRow = { blocker_id: string; blocked_id: string; created_at: string; person?: Profile }
-type Tab = 'discover'|'friends'|'requests'|'profile'
+type ConversationRow = { id: string; title: string | null; is_group: boolean; direct_key: string | null; created_at: string }
+type MessageRow = { id: string; conversation_id: string; sender_id: string; content: string; created_at: string }
+type ChatSummary = { conversationId: string; person: Profile; lastMessage?: string; lastAt?: string }
+type Tab = 'discover'|'friends'|'requests'|'chats'|'profile'
 
 const emptyProfile: Profile = { id: '', username: '', full_name: '', avatar_url: null }
 const nameOf = (p?: Profile | null) => p?.full_name?.trim() || (p?.username ? `@${p.username}` : 'Connectly member')
@@ -21,6 +24,12 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
   const [outgoing, setOutgoing] = useState<RequestRow[]>([])
   const [friends, setFriends] = useState<FriendRow[]>([])
   const [blocks, setBlocks] = useState<BlockRow[]>([])
+  const [chats, setChats] = useState<ChatSummary[]>([])
+  const [activeChatId, setActiveChatId] = useState('')
+  const [chatMessages, setChatMessages] = useState<MessageRow[]>([])
+  const [chatDraft, setChatDraft] = useState('')
+  const [chatLoading, setChatLoading] = useState(false)
+  const [chatBusy, setChatBusy] = useState(false)
   const [results, setResults] = useState<Profile[]>([])
   const [query, setQuery] = useState('')
   const [fullName, setFullName] = useState(initialProfile?.full_name ?? '')
@@ -29,6 +38,84 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+
+  const refreshChats = useCallback(async () => {
+    const { data: memberships, error: memberError } = await supabase
+      .from('conversation_members')
+      .select('conversation_id')
+      .eq('user_id', userId)
+    if (memberError) throw memberError
+
+    const conversationIds = [...new Set((memberships ?? []).map((row) => row.conversation_id as string))]
+    if (!conversationIds.length) {
+      setChats([])
+      return
+    }
+
+    const [conversationResult, allMembersResult, messageResult] = await Promise.all([
+      supabase.from('conversations')
+        .select('id,title,is_group,direct_key,created_at')
+        .in('id', conversationIds)
+        .eq('is_group', false),
+      supabase.from('conversation_members')
+        .select('conversation_id,user_id')
+        .in('conversation_id', conversationIds),
+      supabase.from('messages')
+        .select('id,conversation_id,sender_id,content,created_at')
+        .in('conversation_id', conversationIds)
+        .order('created_at', { ascending: false })
+        .limit(100),
+    ])
+    if (conversationResult.error) throw conversationResult.error
+    if (allMembersResult.error) throw allMembersResult.error
+    if (messageResult.error) throw messageResult.error
+
+    const conversations = (conversationResult.data ?? []) as ConversationRow[]
+    const members = (allMembersResult.data ?? []) as { conversation_id: string; user_id: string }[]
+    const otherIds = [...new Set(members.filter((m) => m.user_id !== userId).map((m) => m.user_id))]
+    const peopleResult = otherIds.length
+      ? await supabase.from('profiles').select('id,username,full_name,avatar_url,created_at').in('id', otherIds)
+      : { data: [] as Profile[], error: null }
+    if (peopleResult.error) throw peopleResult.error
+
+    const people = new Map(((peopleResult.data ?? []) as Profile[]).map((person) => [person.id, person]))
+    const latest = new Map<string, MessageRow>()
+    for (const message of (messageResult.data ?? []) as MessageRow[]) {
+      if (!latest.has(message.conversation_id)) latest.set(message.conversation_id, message)
+    }
+
+    const summaries: ChatSummary[] = conversations.flatMap((conversation) => {
+      const otherMember = members.find((m) => m.conversation_id === conversation.id && m.user_id !== userId)
+      const person = otherMember ? people.get(otherMember.user_id) : undefined
+      if (!person) return []
+      const last = latest.get(conversation.id)
+      return [{
+        conversationId: conversation.id,
+        person,
+        lastMessage: last?.content,
+        lastAt: last?.created_at,
+      }]
+    }).sort((a, b) => (b.lastAt ?? '').localeCompare(a.lastAt ?? ''))
+
+    setChats(summaries)
+  }, [supabase, userId])
+
+  const loadChatMessages = useCallback(async (conversationId: string) => {
+    setChatLoading(true)
+    const { data, error: loadError } = await supabase
+      .from('messages')
+      .select('id,conversation_id,sender_id,content,created_at')
+      .eq('conversation_id', conversationId)
+      .order('created_at', { ascending: true })
+      .limit(100)
+    if (loadError) {
+      setError(loadError.message)
+      setChatMessages([])
+    } else {
+      setChatMessages((data ?? []) as MessageRow[])
+    }
+    setChatLoading(false)
+  }, [supabase])
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -63,8 +150,13 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
       const other = row.sender_id === userId ? row.receiver_id : row.sender_id
       return !blockedIds.has(other) && people.has(other)
     }).map((row) => ({ requestId: row.id, person: people.get(row.sender_id === userId ? row.receiver_id : row.sender_id)! })))
+    try {
+      await refreshChats()
+    } catch (chatError) {
+      setError(chatError instanceof Error ? chatError.message : 'Could not load chats.')
+    }
     setLoading(false)
-  }, [supabase, userId])
+  }, [supabase, userId, refreshChats])
 
   useEffect(() => { void refresh() }, [refresh])
   function clearFeedback() { setMessage(''); setError('') }
@@ -183,9 +275,116 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
     if (e) setError(e.message); else window.location.assign('/login')
   }
 
+  async function openChat(person: Profile) {
+    setChatBusy(true)
+    clearFeedback()
+    try {
+      const { data: friendship, error: friendshipError } = await supabase
+        .from('friend_requests')
+        .select('id')
+        .eq('status', 'accepted')
+        .or(`and(sender_id.eq.${userId},receiver_id.eq.${person.id}),and(sender_id.eq.${person.id},receiver_id.eq.${userId})`)
+        .maybeSingle()
+      if (friendshipError) throw friendshipError
+      if (!friendship) throw new Error('You can only message accepted friends.')
+
+      const { data: blockRows, error: blockError } = await supabase
+        .from('user_blocks')
+        .select('blocker_id,blocked_id')
+        .or(`and(blocker_id.eq.${userId},blocked_id.eq.${person.id}),and(blocker_id.eq.${person.id},blocked_id.eq.${userId})`)
+      if (blockError) throw blockError
+      if ((blockRows ?? []).length) throw new Error('Messaging is unavailable because one of these accounts is blocked.')
+
+      const pairKey = [userId, person.id].sort().join(':')
+      let { data: conversation, error: lookupError } = await supabase
+        .from('conversations')
+        .select('id')
+        .eq('direct_key', pairKey)
+        .maybeSingle()
+      if (lookupError) throw lookupError
+
+      if (!conversation) {
+        const { error: createError } = await supabase.from('conversations').insert({
+          title: null,
+          is_group: false,
+          created_by: userId,
+          direct_key: pairKey,
+        })
+        if (createError && createError.code !== '23505') throw createError
+
+        const lookup = await supabase
+          .from('conversations')
+          .select('id')
+          .eq('direct_key', pairKey)
+          .maybeSingle()
+        if (lookup.error) throw lookup.error
+        conversation = lookup.data
+      }
+
+      if (!conversation?.id) throw new Error('Could not open this conversation. Please retry.')
+
+      const { error: membershipError } = await supabase
+        .from('conversation_members')
+        .insert({ conversation_id: conversation.id, user_id: person.id })
+      if (membershipError && membershipError.code !== '23505') throw membershipError
+
+      setActiveChatId(conversation.id)
+      setTab('chats')
+      await refreshChats()
+      await loadChatMessages(conversation.id)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not open this chat.')
+    } finally {
+      setChatBusy(false)
+    }
+  }
+
+  async function sendChatMessage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const content = chatDraft.trim()
+    if (!content || !activeChatId || chatBusy) return
+    setChatBusy(true)
+    clearFeedback()
+    const { error: sendError } = await supabase.from('messages').insert({
+      conversation_id: activeChatId,
+      sender_id: userId,
+      content,
+    })
+    if (sendError) {
+      setError(sendError.message)
+    } else {
+      setChatDraft('')
+      await loadChatMessages(activeChatId)
+      await refreshChats()
+    }
+    setChatBusy(false)
+  }
+
+  useEffect(() => {
+    if (!activeChatId) return
+    const channel = supabase
+      .channel(`connectly-chat-${activeChatId}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'messages',
+        filter: `conversation_id=eq.${activeChatId}`,
+      }, () => {
+        void loadChatMessages(activeChatId)
+        void refreshChats()
+      })
+      .subscribe()
+    return () => {
+      void supabase.removeChannel(channel)
+    }
+  }, [supabase, activeChatId, loadChatMessages, refreshChats])
+
   const navItems: { id: Tab; icon: string; label: string; count?: number }[] = [
-    { id: 'discover', icon: '⌕', label: 'Discover' }, { id: 'friends', icon: '♡', label: 'Friends' },
-    { id: 'requests', icon: '✉', label: 'Requests', count: incoming.length }, { id: 'profile', icon: '◉', label: 'Profile' },
+    { id: 'discover', icon: '⌕', label: 'Discover' },
+    { id: 'chats', icon: '▤', label: 'Chats', count: chats.length },
+    { id: 'friends', icon: '♡', label: 'Friends' },
+    { id: 'requests', icon: '✉', label: 'Requests', count: incoming.length },
+    { id: 'profile', icon: '◉', label: 'Profile' },
   ]
   return (
     <main className="app-shell">
@@ -206,7 +405,7 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
       </aside>
 
       <section className="main-column">
-        <header className="topbar"><div><p className="eyebrow">YOUR PRIVATE SOCIAL SPACE</p><h2>{tab === 'discover' ? 'Find your people' : tab === 'friends' ? 'Your circle' : tab === 'requests' ? 'Friend requests' : 'Your profile'}</h2></div><div className="topbar-status"><span className="status-dot" /> Secure session</div></header>
+        <header className="topbar"><div><p className="eyebrow">YOUR PRIVATE SOCIAL SPACE</p><h2>{tab === 'discover' ? 'Find your people' : tab === 'friends' ? 'Your circle' : tab === 'requests' ? 'Friend requests' : tab === 'chats' ? 'Your messages' : 'Your profile'}</h2></div><div className="topbar-status"><span className="status-dot" /> Secure session</div></header>
         {(message || error) && <div className={`global-feedback ${error ? 'feedback-error' : 'feedback-success'}`} role="status">{error || message}<button onClick={clearFeedback} aria-label="Dismiss message">×</button></div>}
 
         {tab === 'discover' && <section className="content-stack">
@@ -226,7 +425,7 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
         {tab === 'friends' && <section className="content-stack">
           <div className="section-heading"><div><p className="eyebrow">YOUR CIRCLE</p><h3>{friends.length} {friends.length === 1 ? 'friend' : 'friends'}</h3></div><button className="button button-subtle" onClick={() => setTab('discover')}>＋ Find people</button></div>
           <div className="list-panel glass-panel">
-            {friends.map((friend) => <div className="list-row" key={friend.requestId}><div className="avatar">{initialOf(friend.person)}</div><div className="list-person"><strong>{nameOf(friend.person)}</strong><span>@{friend.person.username}</span></div><span className="friend-badge">Friends</span><button className="icon-button" title="Remove friend" onClick={() => unfriend(friend)} disabled={busy}>−</button><button className="icon-button danger-icon" title="Block user" onClick={() => blockPerson(friend.person)} disabled={busy}>⊘</button></div>)}
+            {friends.map((friend) => <div className="list-row" key={friend.requestId}><div className="avatar">{initialOf(friend.person)}</div><div className="list-person"><strong>{nameOf(friend.person)}</strong><span>@{friend.person.username}</span></div><span className="friend-badge">Friends</span><button className="button button-primary" onClick={() => openChat(friend.person)} disabled={chatBusy}>Message</button><button className="icon-button" title="Remove friend" onClick={() => unfriend(friend)} disabled={busy}>−</button><button className="icon-button danger-icon" title="Block user" onClick={() => blockPerson(friend.person)} disabled={busy}>⊘</button></div>)}
             {!friends.length && <div className="empty-state"><div className="empty-icon">♡</div><h4>Your circle is ready to grow.</h4><p>Find someone by username and send your first friend request.</p><button className="button button-primary" onClick={() => setTab('discover')}>Discover people</button></div>}
           </div>
           <div className="section-heading"><div><p className="eyebrow">PRIVACY</p><h3>Blocked accounts</h3></div></div>
@@ -238,6 +437,43 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
           <div className="list-panel glass-panel">{incoming.map((request) => <div className="list-row request-row" key={request.id}><div className="avatar">{initialOf(request.person)}</div><div className="list-person"><strong>{nameOf(request.person)}</strong><span>@{request.person?.username}</span></div><button className="button button-primary" onClick={() => respond(request, 'accepted')} disabled={busy}>Accept</button><button className="button button-subtle" onClick={() => respond(request, 'declined')} disabled={busy}>Decline</button></div>)}{!incoming.length && <div className="quiet-empty">No incoming requests right now.</div>}</div>
           <div className="section-heading"><div><p className="eyebrow">WAITING FOR A REPLY</p><h3>Sent requests <span className="heading-count">{outgoing.length}</span></h3></div></div>
           <div className="list-panel glass-panel">{outgoing.map((request) => <div className="list-row" key={request.id}><div className="avatar avatar-muted">{initialOf(request.person)}</div><div className="list-person"><strong>{nameOf(request.person)}</strong><span>@{request.person?.username}</span></div><span className="pending-badge">Pending</span><button className="button button-subtle" onClick={() => cancelRequest(request)} disabled={busy}>Cancel</button></div>)}{!outgoing.length && <div className="quiet-empty">You have no pending sent requests.</div>}</div>
+        </section>}
+
+        {tab === 'chats' && <section className="content-stack chat-layout">
+          <div className="section-heading">
+            <div><p className="eyebrow">PRIVATE MESSAGES</p><h3>Your conversations</h3></div>
+            <button className="button button-subtle" onClick={() => void refreshChats()} disabled={chatBusy}>↻ Refresh</button>
+          </div>
+          <div className="chat-panel glass-panel">
+            <aside className="chat-list">
+              <p className="eyebrow chat-list-label">YOUR CHATS</p>
+              {chats.map((chat) => <button key={chat.conversationId} className={`chat-list-item ${activeChatId === chat.conversationId ? 'selected' : ''}`} onClick={() => { setActiveChatId(chat.conversationId); clearFeedback() }}>
+                <div className="avatar">{initialOf(chat.person)}</div>
+                <span className="chat-list-copy"><strong>{nameOf(chat.person)}</strong><small>{chat.lastMessage || 'Start the conversation'}</small></span>
+              </button>)}
+              {!chats.length && <div className="chat-empty-list"><p>You don't have any conversations yet.</p><button className="text-button" onClick={() => setTab('friends')}>Message a friend</button></div>}
+            </aside>
+            <section className="chat-main">
+              {activeChatId ? <>
+                <header className="chat-header">
+                  <div className="avatar avatar-small">{initialOf(chats.find((chat) => chat.conversationId === activeChatId)?.person)}</div>
+                  <div><strong>{nameOf(chats.find((chat) => chat.conversationId === activeChatId)?.person)}</strong><span>Private conversation</span></div>
+                  <button className="icon-button" onClick={() => void loadChatMessages(activeChatId)} title="Refresh messages">↻</button>
+                </header>
+                <div className="chat-messages" aria-live="polite">
+                  {chatLoading && !chatMessages.length && <p className="quiet-empty">Loading messages…</p>}
+                  {!chatLoading && !chatMessages.length && <div className="chat-first-message"><span>✧</span><strong>Say hello.</strong><p>Your conversation is private to its two members.</p></div>}
+                  {chatMessages.map((item) => <div key={item.id} className={`chat-message-row ${item.sender_id === userId ? 'mine' : 'theirs'}`}>
+                    <div className="chat-bubble"><p>{item.content}</p><time>{new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time></div>
+                  </div>)}
+                </div>
+                <form className="chat-compose" onSubmit={sendChatMessage}>
+                  <input value={chatDraft} onChange={(event) => setChatDraft(event.target.value)} maxLength={5000} placeholder="Write a message…" aria-label="Message" />
+                  <button className="button button-primary" type="submit" disabled={chatBusy || !chatDraft.trim()}>{chatBusy ? 'Sending…' : 'Send'}</button>
+                </form>
+              </> : <div className="chat-no-selection"><div className="empty-icon">✉</div><h4>Select a conversation</h4><p>Choose a chat on the left, or start one from your Friends list.</p><button className="button button-primary" onClick={() => setTab('friends')}>Open Friends</button></div>}
+            </section>
+          </div>
         </section>}
 
         {tab === 'profile' && <section className="content-stack profile-layout">
