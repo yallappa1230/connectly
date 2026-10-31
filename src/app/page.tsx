@@ -2,6 +2,9 @@ import { redirect } from 'next/navigation'
 import { ConnectlyShell } from '@/components/connectly-shell'
 import { createClient } from '@/lib/supabase/server'
 
+// This page depends on the visitor's Supabase session and must run at request time.
+export const dynamic = 'force-dynamic'
+
 export default async function HomePage() {
   const supabase = await createClient()
   const { data, error } = await supabase.auth.getUser()
