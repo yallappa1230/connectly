@@ -187,6 +187,29 @@ CREATE POLICY "Leave or remove membership" ON public.conversation_members
   FOR DELETE TO authenticated
   USING (user_id = (SELECT auth.uid()) OR private.is_conversation_creator(conversation_id));
 
+-- Repoint all message-membership policies before disabling public helper execution.
+DROP POLICY IF EXISTS "Members read messages" ON public.messages;
+CREATE POLICY "Members read messages" ON public.messages
+  FOR SELECT TO authenticated
+  USING (private.is_conversation_member(conversation_id));
+
+DROP POLICY IF EXISTS "Members send own messages" ON public.messages;
+CREATE POLICY "Members send own messages" ON public.messages
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    sender_id = (SELECT auth.uid())
+    AND private.is_conversation_member(conversation_id)
+  );
+
+DROP POLICY IF EXISTS "Update own messages" ON public.messages;
+CREATE POLICY "Update own messages" ON public.messages
+  FOR UPDATE TO authenticated
+  USING (sender_id = (SELECT auth.uid()))
+  WITH CHECK (
+    sender_id = (SELECT auth.uid())
+    AND private.is_conversation_member(conversation_id)
+  );
+
 REVOKE ALL ON FUNCTION public.is_conversation_member(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.is_conversation_creator(uuid) FROM PUBLIC, anon, authenticated;
 
