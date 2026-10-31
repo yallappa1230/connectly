@@ -179,11 +179,10 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
       if (!conversation.is_group && !person) return []
       const last = latest.get(conversation.id)
       const preference = settings.get(conversation.id)
-      const unreadCount = preference?.last_read_at
-        ? (messagesByConversation.get(conversation.id) ?? []).filter((item) =>
-            item.sender_id !== userId && item.created_at > (preference.last_read_at ?? '')
-          ).length
-        : 0
+      const lastReadAt = preference?.last_read_at ?? null
+      const unreadCount = (messagesByConversation.get(conversation.id) ?? []).filter((item) =>
+        item.sender_id !== userId && (!lastReadAt || item.created_at > lastReadAt)
+      ).length
       return [{
         conversationId: conversation.id,
         person,
