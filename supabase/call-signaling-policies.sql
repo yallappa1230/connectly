@@ -1,6 +1,8 @@
 -- Connectly private WebRTC signaling authorization.
 -- Call media is peer-to-peer WebRTC. Supabase Realtime carries only signaling messages.
 -- Only authenticated, accepted, unblocked friends can exchange these broadcasts.
+-- A caller must also be able to read-join the recipient's user-calls topic before
+-- publishing an invitation. The policy permits this only for accepted friends.
 
 DROP POLICY IF EXISTS connectly_call_broadcast_receive ON realtime.messages;
 CREATE POLICY connectly_call_broadcast_receive
@@ -11,7 +13,34 @@ CREATE POLICY connectly_call_broadcast_receive
     AND (
       realtime.topic() = 'user-calls:' || (SELECT auth.uid())::text
       OR (
+        split_part(realtime.topic(), ':', 1) = 'user-calls'
+        AND split_part(realtime.topic(), ':', 3) = ''
+        AND EXISTS (
+          SELECT 1
+          FROM public.friend_requests fr
+          WHERE fr.status = 'accepted'
+            AND (
+              (fr.sender_id = (SELECT auth.uid())
+               AND fr.receiver_id::text = split_part(realtime.topic(), ':', 2))
+              OR
+              (fr.receiver_id = (SELECT auth.uid())
+               AND fr.sender_id::text = split_part(realtime.topic(), ':', 2))
+            )
+        )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM public.user_blocks b
+          WHERE
+            (b.blocker_id = (SELECT auth.uid())
+             AND b.blocked_id::text = split_part(realtime.topic(), ':', 2))
+            OR
+            (b.blocked_id = (SELECT auth.uid())
+             AND b.blocker_id::text = split_part(realtime.topic(), ':', 2))
+        )
+      )
+      OR (
         split_part(realtime.topic(), ':', 1) = 'call'
+        AND split_part(realtime.topic(), ':', 4) = ''
         AND (SELECT auth.uid())::text IN (
           split_part(realtime.topic(), ':', 2),
           split_part(realtime.topic(), ':', 3)
@@ -51,6 +80,7 @@ CREATE POLICY connectly_call_broadcast_send
     AND (
       (
         split_part(realtime.topic(), ':', 1) = 'user-calls'
+        AND split_part(realtime.topic(), ':', 3) = ''
         AND EXISTS (
           SELECT 1
           FROM public.friend_requests fr
@@ -77,6 +107,7 @@ CREATE POLICY connectly_call_broadcast_send
       OR
       (
         split_part(realtime.topic(), ':', 1) = 'call'
+        AND split_part(realtime.topic(), ':', 4) = ''
         AND (SELECT auth.uid())::text IN (
           split_part(realtime.topic(), ':', 2),
           split_part(realtime.topic(), ':', 3)
