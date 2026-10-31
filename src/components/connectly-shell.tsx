@@ -9,8 +9,22 @@ type FriendRow = { requestId: string; person: Profile }
 type BlockRow = { blocker_id: string; blocked_id: string; created_at: string; person?: Profile }
 type ConversationRow = { id: string; title: string | null; is_group: boolean; direct_key: string | null; created_at: string }
 type MessageRow = { id: string; conversation_id: string; sender_id: string; content: string; created_at: string }
-type ChatSummary = { conversationId: string; person: Profile; lastMessage?: string; lastAt?: string }
-type Tab = 'chats'|'profile'
+type ChatSummary = {
+  conversationId: string
+  person: Profile | null
+  title: string | null
+  isGroup: boolean
+  memberCount: number
+  lastMessage?: string
+  lastAt?: string
+  lastSenderId?: string
+  unreadCount: number
+  isFavorite: boolean
+  isMuted: boolean
+}
+type ConversationSetting = { conversation_id: string; is_favorite: boolean; is_muted: boolean; last_read_at: string | null }
+type InboxFilter = 'all'|'unread'|'favorites'|'groups'
+type Tab = 'chats'|'updates'|'communities'|'calls'|'profile'
 type Theme = 'black'|'white'|'glass'
 type CallMode = 'audio'|'video'
 type CallPhase = 'incoming'|'calling'|'connecting'|'active'
@@ -27,6 +41,13 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
   const [tab, setTab] = useState<Tab>('chats')
   const [theme, setTheme] = useState<Theme>('black')
   const [chatSearch, setChatSearch] = useState('')
+  const [inboxFilter, setInboxFilter] = useState<InboxFilter>('all')
+  const [chatSettings, setChatSettings] = useState<Record<string, ConversationSetting>>({})
+  const [showInboxSearch, setShowInboxSearch] = useState(false)
+  const [newChatOpen, setNewChatOpen] = useState(false)
+  const [chatMenuFor, setChatMenuFor] = useState<string | null>(null)
+  const [emojiOpen, setEmojiOpen] = useState(false)
+  const searchInputRef = useRef<HTMLInputElement | null>(null)
   const [selectedPerson, setSelectedPerson] = useState<Profile | null>(null)
   const [profile, setProfile] = useState<Profile>(initialProfile ?? emptyProfile)
   const [incoming, setIncoming] = useState<RequestRow[]>([])
@@ -75,14 +96,14 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
     const conversationIds = [...new Set((memberships ?? []).map((row) => row.conversation_id as string))]
     if (!conversationIds.length) {
       setChats([])
+      setChatSettings({})
       return
     }
 
-    const [conversationResult, allMembersResult, messageResult] = await Promise.all([
+    const [conversationResult, allMembersResult, messageResult, settingsResult] = await Promise.all([
       supabase.from('conversations')
         .select('id,title,is_group,direct_key,created_at')
-        .in('id', conversationIds)
-        .eq('is_group', false),
+        .in('id', conversationIds),
       supabase.from('conversation_members')
         .select('conversation_id,user_id')
         .in('conversation_id', conversationIds),
@@ -90,36 +111,61 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
         .select('id,conversation_id,sender_id,content,created_at')
         .in('conversation_id', conversationIds)
         .order('created_at', { ascending: false })
-        .limit(100),
+        .limit(250),
+      supabase.from('conversation_user_settings')
+        .select('conversation_id,is_favorite,is_muted,last_read_at')
+        .eq('user_id', userId)
+        .in('conversation_id', conversationIds),
     ])
     if (conversationResult.error) throw conversationResult.error
     if (allMembersResult.error) throw allMembersResult.error
     if (messageResult.error) throw messageResult.error
+    if (settingsResult.error) throw settingsResult.error
 
     const conversations = (conversationResult.data ?? []) as ConversationRow[]
     const members = (allMembersResult.data ?? []) as { conversation_id: string; user_id: string }[]
-    const otherIds = [...new Set(members.filter((m) => m.user_id !== userId).map((m) => m.user_id))]
-    const peopleResult = otherIds.length
-      ? await supabase.from('profiles').select('id,username,full_name,avatar_url,created_at').in('id', otherIds)
+    const peopleIds = [...new Set(members.filter((m) => m.user_id !== userId).map((m) => m.user_id))]
+    const peopleResult = peopleIds.length
+      ? await supabase.from('profiles').select('id,username,full_name,avatar_url,created_at').in('id', peopleIds)
       : { data: [] as Profile[], error: null }
     if (peopleResult.error) throw peopleResult.error
 
     const people = new Map(((peopleResult.data ?? []) as Profile[]).map((person) => [person.id, person]))
     const latest = new Map<string, MessageRow>()
-    for (const message of (messageResult.data ?? []) as MessageRow[]) {
-      if (!latest.has(message.conversation_id)) latest.set(message.conversation_id, message)
+    const messagesByConversation = new Map<string, MessageRow[]>()
+    for (const item of (messageResult.data ?? []) as MessageRow[]) {
+      if (!latest.has(item.conversation_id)) latest.set(item.conversation_id, item)
+      const group = messagesByConversation.get(item.conversation_id) ?? []
+      group.push(item)
+      messagesByConversation.set(item.conversation_id, group)
     }
+    const settings = new Map(((settingsResult.data ?? []) as ConversationSetting[]).map((row) => [row.conversation_id, row]))
+    setChatSettings(Object.fromEntries(settings.entries()))
 
     const summaries: ChatSummary[] = conversations.flatMap((conversation) => {
-      const otherMember = members.find((m) => m.conversation_id === conversation.id && m.user_id !== userId)
-      const person = otherMember ? people.get(otherMember.user_id) : undefined
-      if (!person) return []
+      const conversationMembers = members.filter((m) => m.conversation_id === conversation.id)
+      const otherMembers = conversationMembers.filter((m) => m.user_id !== userId)
+      const person = otherMembers.length === 1 ? people.get(otherMembers[0].user_id) ?? null : null
+      if (!conversation.is_group && !person) return []
       const last = latest.get(conversation.id)
+      const preference = settings.get(conversation.id)
+      const unreadCount = preference?.last_read_at
+        ? (messagesByConversation.get(conversation.id) ?? []).filter((item) =>
+            item.sender_id !== userId && item.created_at > (preference.last_read_at ?? '')
+          ).length
+        : 0
       return [{
         conversationId: conversation.id,
         person,
+        title: conversation.title,
+        isGroup: conversation.is_group,
+        memberCount: conversationMembers.length,
         lastMessage: last?.content,
         lastAt: last?.created_at,
+        lastSenderId: last?.sender_id,
+        unreadCount,
+        isFavorite: preference?.is_favorite ?? false,
+        isMuted: preference?.is_muted ?? false,
       }]
     }).sort((a, b) => (b.lastAt ?? '').localeCompare(a.lastAt ?? ''))
 
@@ -914,22 +960,74 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
   }, [supabase, activeChatId, loadChatMessages, refreshChats])
 
   const navItems: { id: Tab; icon: string; label: string; count?: number }[] = [
-    { id: 'chats', icon: '▤', label: 'Chats', count: incoming.length },
-    { id: 'profile', icon: '◉', label: 'Profile' },
+    { id: 'chats', icon: '▤', label: 'Chats', count: chats.reduce((n, chat) => n + chat.unreadCount, 0) },
+    { id: 'updates', icon: '◉', label: 'Updates' },
+    { id: 'communities', icon: '♧', label: 'Communities' },
+    { id: 'calls', icon: '☎', label: 'Calls' },
   ]
   const firstName = profile.full_name?.trim().split(/\s+/)[0] || profile.username || 'there'
-  const filteredChats = chats.filter((chat) => {
+  const searchedChats = chats.filter((chat) => {
     const term = chatSearch.trim().toLowerCase()
-    return !term || nameOf(chat.person).toLowerCase().includes(term)
+    const displayName = chat.isGroup ? (chat.title || 'Group chat') : nameOf(chat.person)
+    const usernameMatch = chat.person?.username.toLowerCase().includes(term) ?? false
+    return !term || displayName.toLowerCase().includes(term)
       || (chat.lastMessage ?? '').toLowerCase().includes(term)
-      || chat.person.username.toLowerCase().includes(term)
+      || usernameMatch
   })
-  const activeChatPerson = chats.find((chat) => chat.conversationId === activeChatId)?.person ?? null
+  const filteredChats = searchedChats.filter((chat) => {
+    if (inboxFilter === 'unread') return chat.unreadCount > 0
+    if (inboxFilter === 'favorites') return chat.isFavorite
+    if (inboxFilter === 'groups') return chat.isGroup
+    return true
+  })
+  const activeChat = chats.find((chat) => chat.conversationId === activeChatId) ?? null
+  const activeChatPerson = activeChat?.person ?? null
+
+  async function markChatRead(conversationId: string) {
+    const current = chatSettings[conversationId]
+    const timestamp = new Date().toISOString()
+    const row = {
+      conversation_id: conversationId,
+      user_id: userId,
+      is_favorite: current?.is_favorite ?? false,
+      is_muted: current?.is_muted ?? false,
+      last_read_at: timestamp,
+    }
+    const { error: saveError } = await supabase.from('conversation_user_settings')
+      .upsert(row, { onConflict: 'conversation_id,user_id' })
+    if (saveError) {
+      setError(saveError.message)
+      return
+    }
+    setChatSettings((items) => ({ ...items, [conversationId]: { ...row } }))
+  }
+
+  async function setConversationFlag(chat: ChatSummary, field: 'is_favorite'|'is_muted') {
+    const current = chatSettings[chat.conversationId]
+    const row = {
+      conversation_id: chat.conversationId,
+      user_id: userId,
+      is_favorite: field === 'is_favorite' ? !chat.isFavorite : (current?.is_favorite ?? false),
+      is_muted: field === 'is_muted' ? !chat.isMuted : (current?.is_muted ?? false),
+      last_read_at: current?.last_read_at ?? null,
+    }
+    const { error: saveError } = await supabase.from('conversation_user_settings')
+      .upsert(row, { onConflict: 'conversation_id,user_id' })
+    if (saveError) { setError(saveError.message); return }
+    setChatSettings((items) => ({ ...items, [chat.conversationId]: { ...row } }))
+    setChatMenuFor(null)
+    await refreshChats()
+  }
+
   async function selectChat(chat: ChatSummary) {
     setActiveChatId(chat.conversationId)
     setChatMessages([])
+    setEmojiOpen(false)
+    setChatMenuFor(null)
     clearFeedback()
+    await markChatRead(chat.conversationId)
     await loadChatMessages(chat.conversationId)
+    if (chat.isGroup) return
   }
   return (
     <main className="app-shell" data-theme={theme}>
