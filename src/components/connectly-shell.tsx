@@ -1868,6 +1868,7 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
                   <span><strong>{activeChat.isGroup ? (activeChat.title || 'Group chat') : nameOf(activeChatPerson)}</strong><small>{activeChat.isGroup ? `${activeChat.memberCount} members` : `@${activeChatPerson?.username} · Connectly friend`}</small></span>
                 </button> : <div className="conversation-person"><span className="inbox-avatar small">C</span><span><strong>Connectly chat</strong><small>Private conversation</small></span></div>}
                 <div className="conversation-actions">
+                  <button type="button" className="conversation-action-button" title="Search this chat" aria-label="Search this chat" onClick={() => { setMessageSearchOpen((value) => !value); setMessageSearch('') }}>⌕</button>
                   {activeChatPerson && <>
                     <button type="button" className="conversation-action-button" title="Video call" aria-label="Video call" disabled={!!callState} onClick={() => void startCall(activeChatPerson, 'video')}>▣</button>
                     <button type="button" className="conversation-action-button" title="Audio call" aria-label="Audio call" disabled={!!callState} onClick={() => void startCall(activeChatPerson, 'audio')}>☎</button>
@@ -1887,11 +1888,12 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
                 <button type="button" onClick={() => setSecurityInfoOpen(true)}>Security info</button>
               </div>
 
+              {messageSearchOpen && <label className="conversation-search-bar"><span aria-hidden="true">⌕</span><input autoFocus value={messageSearch} onChange={(event) => setMessageSearch(event.target.value)} placeholder="Search messages in this chat…" aria-label="Search messages in this chat" />{messageSearch && <button type="button" onClick={() => setMessageSearch('')} aria-label="Clear message search">×</button>}</label>}
               <div className="conversation-messages whatsapp-message-wall" aria-live="polite">
                 {chatLoading && !chatMessages.length && <p className="quiet-empty">Loading messages…</p>}
                 {!chatLoading && !chatMessages.length && <div className="conversation-empty"><span>✦</span><strong>Say hello.</strong><p>Your conversation starts here.</p></div>}
-                {chatMessages.map((item, index) => {
-                  const previous = chatMessages[index - 1]
+                {visibleMessages.map((item, index) => {
+                  const previous = visibleMessages[index - 1]
                   const isNewDay = !previous || new Date(previous.created_at).toDateString() !== new Date(item.created_at).toDateString()
                   return <div key={item.id}>
                     {isNewDay && <div className="chat-day-divider"><span>{formatMessageDay(item.created_at)}</span></div>}
@@ -1928,6 +1930,7 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
                           <button type="button" onClick={() => { setReplyingTo(item); setMessageMenuFor(null); setEmojiOpen(false) }}>Reply</button>
                           <button type="button" onClick={() => { setReactionMenuFor(reactionMenuFor === item.id ? null : item.id); setMessageMenuFor(null) }}>React</button>
                           <button type="button" onClick={() => void toggleSavedMessage(item)}>{savedMessageIds.includes(item.id) ? 'Remove from Connectly Notes' : 'Save to Connectly Notes'}</button>
+                          <button type="button" onClick={() => startTaskFromMessage(item)}>Turn into task</button>
                           <button type="button" onClick={() => void copyMessage(item)}>Copy</button>
                           {item.sender_id === userId && <button type="button" className="message-delete-option" onClick={() => void deleteOwnMessage(item)}>Delete for everyone</button>}
                         </div>}
@@ -2091,6 +2094,34 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
             </section>
           </div>}
 
+          {taskSourceMessage && <div className="modal-scrim" role="presentation" onClick={() => setTaskSourceMessage(null)}>
+            <section className="new-chat-modal glass-panel task-create-modal" role="dialog" aria-modal="true" aria-labelledby="task-create-title" onClick={(event) => event.stopPropagation()}>
+              <div className="modal-heading"><div><p className="eyebrow">CONNECTLY FOCUS</p><h3 id="task-create-title">Turn message into a task</h3></div><button type="button" className="icon-button" onClick={() => setTaskSourceMessage(null)} aria-label="Close task form">×</button></div>
+              <form className="stack-form" onSubmit={createConnectlyTask}>
+                <label className="field-label">Task title<input value={taskTitle} onChange={(event) => setTaskTitle(event.target.value)} maxLength={160} required placeholder="What needs to be done?" /></label>
+                <label className="field-label">Due date (optional)<input type="date" value={taskDueAt} onChange={(event) => setTaskDueAt(event.target.value)} /></label>
+                <p className="muted small-text">This task is saved privately to your Connectly account and linked to this conversation.</p>
+                <button type="submit" className="button button-primary button-wide" disabled={taskBusy || !taskTitle.trim()}>{taskBusy ? 'Saving…' : 'Save task'}</button>
+              </form>
+            </section>
+          </div>}
+
+          {tasksOpen && <div className="modal-scrim" role="presentation" onClick={() => setTasksOpen(false)}>
+            <section className="new-chat-modal glass-panel tasks-list-modal" role="dialog" aria-modal="true" aria-labelledby="connectly-tasks-title" onClick={(event) => event.stopPropagation()}>
+              <div className="modal-heading"><div><p className="eyebrow">CONNECTLY FOCUS</p><h3 id="connectly-tasks-title">My tasks</h3></div><button type="button" className="icon-button" onClick={() => setTasksOpen(false)} aria-label="Close tasks">×</button></div>
+              {tasks.length ? <div className="connectly-task-list">
+                {tasks.map((task) => <article className={`connectly-task-item ${task.status === 'done' ? 'completed' : ''}`} key={task.id}>
+                  <label><input type="checkbox" checked={task.status === 'done'} onChange={() => void toggleConnectlyTask(task)} /><span><strong>{task.title}</strong><small>{task.due_at ? 'Due ' + new Date(task.due_at).toLocaleDateString() : 'No due date'} · {task.status === 'done' ? 'Completed' : 'Open'}</small></span></label>
+                  <button type="button" className="text-button" onClick={() => {
+                    const chat = chats.find((item) => item.conversationId === task.conversation_id)
+                    setTasksOpen(false)
+                    if (chat) void selectChat(chat)
+                  }}>Open chat</button>
+                </article>)}
+              </div> : <div className="inbox-empty glass-panel"><span className="inbox-empty-icon">✓</span><h4>No tasks yet</h4><p>Open a message menu and choose “Turn into task” to keep track of something important.</p></div>}
+            </section>
+          </div>}
+
           {reportPerson && <div className="modal-scrim" role="presentation" onClick={() => setReportPerson(null)}>
             <section className="new-chat-modal glass-panel report-modal" role="dialog" aria-modal="true" aria-labelledby="report-person-title" onClick={(event) => event.stopPropagation()}>
               <div className="modal-heading"><div><p className="eyebrow">SAFETY CENTRE</p><h3 id="report-person-title">Report {nameOf(reportPerson)}</h3></div><button type="button" className="icon-button" onClick={() => setReportPerson(null)} aria-label="Close report">×</button></div>
@@ -2204,7 +2235,7 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
           <div className="form-panel glass-panel privacy-note"><div className="privacy-icon">◇</div><div><h4>Your privacy matters</h4><p className="muted">Only your profile basics are searchable by signed-in Connectly users. Never put passwords, phone numbers or private details in your public profile.</p></div></div>
         </section>}
 
-        <footer className="app-footer"><span>CONNECTLY</span><span>Made for meaningful connections</span><span>PHASE 01 · AUTH & FRIENDS</span></footer>
+        <footer className="app-footer"><span>CONNECTLY</span><span>Made for meaningful connections</span><span>MESSAGING PREVIEW</span></footer>
       </section>
       {callError && !callState && <div className="call-toast" role="status">
         <span>{callError}</span><button type="button" onClick={() => setCallError('')} aria-label="Dismiss call message">×</button>
