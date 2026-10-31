@@ -117,9 +117,28 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
   }
   async function blockPerson(person: Profile) {
     await runAction(async () => {
-      const { error: e } = await supabase.from('user_blocks').insert({ blocker_id: userId, blocked_id: person.id })
-      if (e && !e.message.toLowerCase().includes('duplicate')) throw e
-    }, `${nameOf(person)} has been blocked.`)
+      const { data: related, error: queryError } = await supabase
+        .from('friend_requests')
+        .select('id,sender_id,receiver_id,status')
+        .in('status', ['pending', 'accepted'])
+        .or(`and(sender_id.eq.${userId},receiver_id.eq.${person.id}),and(sender_id.eq.${person.id},receiver_id.eq.${userId})`)
+      if (queryError) throw queryError
+
+      for (const row of related ?? []) {
+        const nextStatus = row.status === 'accepted' || row.sender_id === userId ? 'cancelled' : 'declined'
+        const { error: updateError } = await supabase
+          .from('friend_requests')
+          .update({ status: nextStatus })
+          .eq('id', row.id)
+          .eq('status', row.status)
+        if (updateError) throw updateError
+      }
+
+      const { error: blockError } = await supabase
+        .from('user_blocks')
+        .insert({ blocker_id: userId, blocked_id: person.id })
+      if (blockError && !blockError.message.toLowerCase().includes('duplicate')) throw blockError
+    }, `${nameOf(person)} has been blocked and removed from your friend connections.`)
     setResults((items) => items.filter((x) => x.id !== person.id))
   }
   async function unblockPerson(block: BlockRow) {
