@@ -195,3 +195,26 @@ The Windows installer is not code-signed, so Windows may display an unknown-publ
 - Android minimum SDK: 24 (Android 7.0); built for ARM64 in this workflow.
 - Generated `src-tauri/gen` and `src-tauri/target` folders are build output and are intentionally ignored by Git.
 - The Tauri wrapper does not enable end-to-end encryption. The existing Connectly E2EE status remains unchanged.
+
+
+## Android, Windows and Linux apps
+
+This branch contains native app shells for the hosted Connectly web application:
+
+- Android source project: `android/` (Java WebView app; camera, microphone and file-picker permissions are requested when needed).
+- Windows desktop shell: `desktop/` (Electron NSIS `.exe` installer).
+- Debian/Ubuntu desktop shell: `desktop/` (Electron `.deb` package).
+- Build pipeline: `.github/workflows/package-apps.yml`.
+
+The wrappers load the HTTPS Connectly deployment; they do not bundle or replace the Next.js server. An internet connection is required for sign-in, messages, calls, uploads and Supabase data. They do not work offline.
+
+The GitHub Actions workflow builds three downloadable artifacts when app-wrapper files change on `phase-1-auth-friends`, or when manually started:
+- `connectly-android-apk` — installable debug APK (signed with the standard debug certificate).
+- `connectly-windows-exe` — Windows x64 NSIS installer (not code-signed).
+- `connectly-linux-deb` — Debian/Ubuntu x64 package.
+
+Open GitHub → Actions → **Connectly app packages** → latest successful run → Artifacts to download them. The Windows installer may show a SmartScreen warning because it is not code-signed. The Android APK is a debug-signed sideload build, not a Play Store release.
+
+The default app URL is `https://connectly-gamma-lyart.vercel.app`. Make sure the intended `phase-1-auth-friends` build has been promoted to that Vercel production domain before distributing the wrappers. You can override the Android build URL with the `CONNECTLY_WEB_URL` environment variable and the desktop URL with that variable when launching the Electron app.
+
+The mobile and desktop wrappers use the hosted app's existing account, storage and messaging services. E2EE is still not enabled in Connectly; packaging does not change that security status.
