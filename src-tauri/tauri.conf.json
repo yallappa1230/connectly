@@ -1,0 +1,51 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Connectly",
+  "version": "1.0.0",
+  "identifier": "com.connectly.app",
+  "build": {
+    "frontendDist": "https://connectly-gamma-lyart.vercel.app"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Connectly",
+        "width": 1180,
+        "height": 820,
+        "minWidth": 360,
+        "minHeight": 600,
+        "center": true,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["deb", "nsis"],
+    "category": "SocialNetworking",
+    "publisher": "Connectly",
+    "shortDescription": "Private messaging and meaningful connections",
+    "longDescription": "Connectly brings private conversations, friend connections, groups and calls together in one place.",
+    "homepage": "https://connectly-gamma-lyart.vercel.app",
+    "linux": {
+      "deb": {
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0"
+        ]
+      }
+    },
+    "windows": {
+      "nsis": {
+        "displayLanguageSelector": false
+      }
+    },
+    "android": {
+      "minSdkVersion": 24
+    }
+  }
+}
