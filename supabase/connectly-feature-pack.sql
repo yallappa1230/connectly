@@ -310,3 +310,164 @@ CREATE POLICY connectly_chat_media_delete_owner ON storage.objects FOR DELETE TO
 
 NOTIFY pgrst, 'reload schema';
 COMMIT;
+
+
+-- Harden the original conversation security helpers.
+-- Exposed public helper RPCs are no longer required by RLS policies.
+CREATE OR REPLACE FUNCTION private.is_conversation_member(cid uuid)
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.conversation_members cm
+    WHERE cm.conversation_id = cid AND cm.user_id = (SELECT auth.uid())
+  );
+$$;
+CREATE OR REPLACE FUNCTION private.is_conversation_creator(cid uuid)
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.conversations c
+    WHERE c.id = cid AND c.created_by = (SELECT auth.uid())
+  );
+$$;
+REVOKE ALL ON FUNCTION private.is_conversation_member(uuid) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION private.is_conversation_creator(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION private.is_conversation_member(uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION private.is_conversation_creator(uuid) TO authenticated;
+
+DROP POLICY IF EXISTS "Members read conversations" ON public.conversations;
+CREATE POLICY "Members read conversations" ON public.conversations
+  FOR SELECT TO authenticated USING (private.is_conversation_member(id));
+DROP POLICY IF EXISTS "Create own conversations" ON public.conversations;
+CREATE POLICY "Create own conversations" ON public.conversations
+  FOR INSERT TO authenticated
+  WITH CHECK ((SELECT auth.uid()) IS NOT NULL AND created_by = (SELECT auth.uid()));
+DROP POLICY IF EXISTS "Members read membership" ON public.conversation_members;
+CREATE POLICY "Members read membership" ON public.conversation_members
+  FOR SELECT TO authenticated USING (private.is_conversation_member(conversation_id));
+DROP POLICY IF EXISTS "Only creator adds members" ON public.conversation_members;
+CREATE POLICY "Only creator adds members" ON public.conversation_members
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    private.is_conversation_creator(conversation_id)
+    AND (
+      user_id = (SELECT auth.uid())
+      OR EXISTS (
+        SELECT 1 FROM public.friend_requests fr
+        WHERE fr.status = 'accepted'
+          AND (
+            (fr.sender_id = (SELECT auth.uid()) AND fr.receiver_id = user_id)
+            OR (fr.receiver_id = (SELECT auth.uid()) AND fr.sender_id = user_id)
+          )
+      )
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM public.user_blocks b
+      WHERE (b.blocker_id = (SELECT auth.uid()) AND b.blocked_id = user_id)
+         OR (b.blocker_id = user_id AND b.blocked_id = (SELECT auth.uid()))
+    )
+  );
+DROP POLICY IF EXISTS "Leave or remove membership" ON public.conversation_members;
+CREATE POLICY "Leave or remove membership" ON public.conversation_members
+  FOR DELETE TO authenticated
+  USING (
+    user_id = (SELECT auth.uid())
+    OR private.is_conversation_creator(conversation_id)
+  );
+
+DROP POLICY IF EXISTS "Members read messages" ON public.messages;
+CREATE POLICY "Members read messages" ON public.messages
+  FOR SELECT TO authenticated USING (private.is_conversation_member(conversation_id));
+DROP POLICY IF EXISTS "Members send own messages" ON public.messages;
+CREATE POLICY "Members send own messages" ON public.messages
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    sender_id = (SELECT auth.uid())
+    AND private.is_conversation_member(conversation_id)
+  );
+DROP POLICY IF EXISTS "Update own messages" ON public.messages;
+CREATE POLICY "Update own messages" ON public.messages
+  FOR UPDATE TO authenticated
+  USING (sender_id = (SELECT auth.uid()))
+  WITH CHECK (
+    sender_id = (SELECT auth.uid())
+    AND private.is_conversation_member(conversation_id)
+  );
+
+DROP POLICY IF EXISTS conversation_settings_insert_own ON public.conversation_user_settings;
+CREATE POLICY conversation_settings_insert_own ON public.conversation_user_settings
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    user_id = (SELECT auth.uid())
+    AND private.is_conversation_member(conversation_id)
+  );
+DROP POLICY IF EXISTS conversation_settings_update_own ON public.conversation_user_settings;
+CREATE POLICY conversation_settings_update_own ON public.conversation_user_settings
+  FOR UPDATE TO authenticated
+  USING (user_id = (SELECT auth.uid()))
+  WITH CHECK (
+    user_id = (SELECT auth.uid())
+    AND private.is_conversation_member(conversation_id)
+  );
+
+DROP POLICY IF EXISTS message_reactions_read_members ON public.message_reactions;
+CREATE POLICY message_reactions_read_members ON public.message_reactions
+  FOR SELECT TO authenticated
+  USING (EXISTS (
+    SELECT 1 FROM public.messages m
+    WHERE m.id = message_id AND private.is_conversation_member(m.conversation_id)
+  ));
+DROP POLICY IF EXISTS message_reactions_add_self ON public.message_reactions;
+CREATE POLICY message_reactions_add_self ON public.message_reactions
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    user_id = (SELECT auth.uid())
+    AND EXISTS (
+      SELECT 1 FROM public.messages m
+      WHERE m.id = message_id AND private.is_conversation_member(m.conversation_id)
+    )
+  );
+
+DROP POLICY IF EXISTS message_attachments_read_members ON public.message_attachments;
+CREATE POLICY message_attachments_read_members ON public.message_attachments
+  FOR SELECT TO authenticated USING (private.is_conversation_member(conversation_id));
+DROP POLICY IF EXISTS message_attachments_insert_sender ON public.message_attachments;
+CREATE POLICY message_attachments_insert_sender ON public.message_attachments
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    uploader_id = (SELECT auth.uid())
+    AND private.is_conversation_member(conversation_id)
+    AND EXISTS (
+      SELECT 1 FROM public.messages m
+      WHERE m.id = message_id
+        AND m.conversation_id = message_attachments.conversation_id
+        AND m.sender_id = (SELECT auth.uid())
+    )
+  );
+
+DROP POLICY IF EXISTS saved_messages_insert_self ON public.saved_messages;
+CREATE POLICY saved_messages_insert_self ON public.saved_messages
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    user_id = (SELECT auth.uid())
+    AND EXISTS (
+      SELECT 1 FROM public.messages m
+      WHERE m.id = message_id AND private.is_conversation_member(m.conversation_id)
+    )
+  );
+
+-- Trigger/event-trigger functions are invoked by their triggers, not as client RPCs.
+REVOKE ALL ON FUNCTION public.add_conversation_creator() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.handle_new_user() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.rls_auto_enable() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.is_conversation_creator(uuid) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.is_conversation_member(uuid) FROM PUBLIC, anon, authenticated;
+
+-- Cover foreign keys frequently used in chat media, reactions, notes and reports.
+CREATE INDEX IF NOT EXISTS conversations_created_by_idx ON public.conversations(created_by);
+CREATE INDEX IF NOT EXISTS messages_sender_id_idx ON public.messages(sender_id);
+CREATE INDEX IF NOT EXISTS message_attachments_uploader_idx ON public.message_attachments(uploader_id);
+CREATE INDEX IF NOT EXISTS message_reactions_user_idx ON public.message_reactions(user_id);
+CREATE INDEX IF NOT EXISTS saved_messages_message_idx ON public.saved_messages(message_id);
+CREATE INDEX IF NOT EXISTS user_reports_reporter_idx ON public.user_reports(reporter_id);
+CREATE INDEX IF NOT EXISTS user_reports_reported_user_idx ON public.user_reports(reported_user_id);
