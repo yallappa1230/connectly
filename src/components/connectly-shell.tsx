@@ -11,6 +11,7 @@ type ConversationRow = { id: string; title: string | null; is_group: boolean; di
 type MessageRow = { id: string; conversation_id: string; sender_id: string; content: string; created_at: string }
 type ChatSummary = { conversationId: string; person: Profile; lastMessage?: string; lastAt?: string }
 type Tab = 'discover'|'friends'|'requests'|'chats'|'profile'
+type Theme = 'black'|'white'|'glass'
 
 const emptyProfile: Profile = { id: '', username: '', full_name: '', avatar_url: null }
 const nameOf = (p?: Profile | null) => p?.full_name?.trim() || (p?.username ? `@${p.username}` : 'Connectly member')
@@ -18,7 +19,10 @@ const initialOf = (p?: Profile | null) => nameOf(p).replace(/^@/, '').slice(0, 1
 
 export function ConnectlyShell({ userId, email, initialProfile }: { userId: string; email: string; initialProfile: Profile }) {
   const supabase = useMemo(() => createClient(), [])
-  const [tab, setTab] = useState<Tab>('discover')
+  const [tab, setTab] = useState<Tab>('chats')
+  const [theme, setTheme] = useState<Theme>('black')
+  const [chatSearch, setChatSearch] = useState('')
+  const [newChatOpen, setNewChatOpen] = useState(false)
   const [profile, setProfile] = useState<Profile>(initialProfile ?? emptyProfile)
   const [incoming, setIncoming] = useState<RequestRow[]>([])
   const [outgoing, setOutgoing] = useState<RequestRow[]>([])
@@ -159,6 +163,24 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
   }, [supabase, userId, refreshChats])
 
   useEffect(() => { void refresh() }, [refresh])
+
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem('connectly-theme')
+      if (saved === 'black' || saved === 'white' || saved === 'glass') setTheme(saved)
+    } catch {
+      // Theme remains usable even when local storage is unavailable.
+    }
+  }, [])
+
+  function chooseTheme(nextTheme: Theme) {
+    setTheme(nextTheme)
+    try {
+      window.localStorage.setItem('connectly-theme', nextTheme)
+    } catch {
+      // The current page still updates when persistence is unavailable.
+    }
+  }
   function clearFeedback() { setMessage(''); setError('') }
 
   async function runAction(action: () => Promise<void>, success: string) {
@@ -329,6 +351,7 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
       if (membershipError && membershipError.code !== '23505') throw membershipError
 
       setActiveChatId(conversation.id)
+      setNewChatOpen(false)
       setTab('chats')
       await refreshChats()
       await loadChatMessages(conversation.id)
@@ -380,14 +403,27 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
   }, [supabase, activeChatId, loadChatMessages, refreshChats])
 
   const navItems: { id: Tab; icon: string; label: string; count?: number }[] = [
-    { id: 'discover', icon: '⌕', label: 'Discover' },
-    { id: 'chats', icon: '▤', label: 'Chats', count: chats.length },
+    { id: 'chats', icon: '▤', label: 'Chats' },
     { id: 'friends', icon: '♡', label: 'Friends' },
     { id: 'requests', icon: '✉', label: 'Requests', count: incoming.length },
+    { id: 'discover', icon: '⌕', label: 'Discover' },
     { id: 'profile', icon: '◉', label: 'Profile' },
   ]
+  const firstName = profile.full_name?.trim().split(/\s+/)[0] || profile.username || 'there'
+  const filteredChats = chats.filter((chat) => {
+    const term = chatSearch.trim().toLowerCase()
+    return !term || nameOf(chat.person).toLowerCase().includes(term)
+      || (chat.lastMessage ?? '').toLowerCase().includes(term)
+      || chat.person.username.toLowerCase().includes(term)
+  })
+  async function selectChat(chat: ChatSummary) {
+    setActiveChatId(chat.conversationId)
+    setChatMessages([])
+    clearFeedback()
+    await loadChatMessages(chat.conversationId)
+  }
   return (
-    <main className="app-shell">
+    <main className="app-shell" data-theme={theme}>
       <div className="ambient ambient-a" /><div className="ambient ambient-b" />
       <aside className="sidebar glass-panel">
         <a className="brand-lockup brand-small" href="/"><div className="brand-mark">C</div><div><p className="eyebrow">YOUR PEOPLE</p><h1>Connectly</h1></div></a>
@@ -405,7 +441,21 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
       </aside>
 
       <section className="main-column">
-        <header className="topbar"><div><p className="eyebrow">YOUR PRIVATE SOCIAL SPACE</p><h2>{tab === 'discover' ? 'Find your people' : tab === 'friends' ? 'Your circle' : tab === 'requests' ? 'Friend requests' : tab === 'chats' ? 'Your messages' : 'Your profile'}</h2></div><div className="topbar-status"><span className="status-dot" /> Secure session</div></header>
+        <header className="app-topbar">
+          <a className="topbar-brand" href="/" aria-label="Connectly home">
+            <span className="brand-symbol">•••</span>
+            <span className="topbar-brand-copy"><strong>Connectly</strong><small>YOUR PRIVATE SOCIAL SPACE</small></span>
+          </a>
+          <div className="topbar-actions">
+            <div className="theme-picker" role="group" aria-label="Choose appearance">
+              <button type="button" className={`theme-choice ${theme === 'black' ? 'selected' : ''}`} onClick={() => chooseTheme('black')} aria-pressed={theme === 'black'} title="Black theme"><span className="theme-dot theme-dot-black" /><span>Black</span></button>
+              <button type="button" className={`theme-choice ${theme === 'white' ? 'selected' : ''}`} onClick={() => chooseTheme('white')} aria-pressed={theme === 'white'} title="White theme"><span className="theme-dot theme-dot-white" /><span>White</span></button>
+              <button type="button" className={`theme-choice ${theme === 'glass' ? 'selected' : ''}`} onClick={() => chooseTheme('glass')} aria-pressed={theme === 'glass'} title="Liquid Glass theme"><span className="theme-dot theme-dot-glass" /><span>Glass</span></button>
+            </div>
+            <span className="topbar-status"><i className="status-dot" /> Secure</span>
+            <button type="button" className="topbar-avatar" onClick={() => setTab('profile')} aria-label="Open profile">{initialOf(profile)}</button>
+          </div>
+        </header>
         {(message || error) && <div className={`global-feedback ${error ? 'feedback-error' : 'feedback-success'}`} role="status">{error || message}<button onClick={clearFeedback} aria-label="Dismiss message">×</button></div>}
 
         {tab === 'discover' && <section className="content-stack">
@@ -439,41 +489,76 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
           <div className="list-panel glass-panel">{outgoing.map((request) => <div className="list-row" key={request.id}><div className="avatar avatar-muted">{initialOf(request.person)}</div><div className="list-person"><strong>{nameOf(request.person)}</strong><span>@{request.person?.username}</span></div><span className="pending-badge">Pending</span><button className="button button-subtle" onClick={() => cancelRequest(request)} disabled={busy}>Cancel</button></div>)}{!outgoing.length && <div className="quiet-empty">You have no pending sent requests.</div>}</div>
         </section>}
 
-        {tab === 'chats' && <section className="content-stack chat-layout">
-          <div className="section-heading">
-            <div><p className="eyebrow">PRIVATE MESSAGES</p><h3>Your conversations</h3></div>
-            <button className="button button-subtle" onClick={() => void refreshChats()} disabled={chatBusy}>↻ Refresh</button>
-          </div>
-          <div className="chat-panel glass-panel">
-            <aside className="chat-list">
-              <p className="eyebrow chat-list-label">YOUR CHATS</p>
-              {chats.map((chat) => <button key={chat.conversationId} className={`chat-list-item ${activeChatId === chat.conversationId ? 'selected' : ''}`} onClick={() => { setActiveChatId(chat.conversationId); clearFeedback() }}>
-                <div className="avatar">{initialOf(chat.person)}</div>
-                <span className="chat-list-copy"><strong>{nameOf(chat.person)}</strong><small>{chat.lastMessage || 'Start the conversation'}</small></span>
-              </button>)}
-              {!chats.length && <div className="chat-empty-list"><p>You don't have any conversations yet.</p><button className="text-button" onClick={() => setTab('friends')}>Message a friend</button></div>}
-            </aside>
-            <section className="chat-main">
-              {activeChatId ? <>
-                <header className="chat-header">
-                  <div className="avatar avatar-small">{initialOf(chats.find((chat) => chat.conversationId === activeChatId)?.person)}</div>
-                  <div><strong>{nameOf(chats.find((chat) => chat.conversationId === activeChatId)?.person)}</strong><span>Private conversation</span></div>
-                  <button className="icon-button" onClick={() => void loadChatMessages(activeChatId)} title="Refresh messages">↻</button>
-                </header>
-                <div className="chat-messages" aria-live="polite">
-                  {chatLoading && !chatMessages.length && <p className="quiet-empty">Loading messages…</p>}
-                  {!chatLoading && !chatMessages.length && <div className="chat-first-message"><span>✧</span><strong>Say hello.</strong><p>Your conversation is private to its two members.</p></div>}
-                  {chatMessages.map((item) => <div key={item.id} className={`chat-message-row ${item.sender_id === userId ? 'mine' : 'theirs'}`}>
-                    <div className="chat-bubble"><p>{item.content}</p><time>{new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time></div>
-                  </div>)}
-                </div>
-                <form className="chat-compose" onSubmit={sendChatMessage}>
-                  <input value={chatDraft} onChange={(event) => setChatDraft(event.target.value)} maxLength={5000} placeholder="Write a message…" aria-label="Message" />
-                  <button className="button button-primary" type="submit" disabled={chatBusy || !chatDraft.trim()}>{chatBusy ? 'Sending…' : 'Send'}</button>
-                </form>
-              </> : <div className="chat-no-selection"><div className="empty-icon">✉</div><h4>Select a conversation</h4><p>Choose a chat on the left, or start one from your Friends list.</p><button className="button button-primary" onClick={() => setTab('friends')}>Open Friends</button></div>}
+        {tab === 'chats' && <section className="inbox-layout">
+          {!activeChatId ? <>
+            <section className="inbox-welcome">
+              <div>
+                <p className="eyebrow">A LITTLE CLOSER, EVERY DAY</p>
+                <h2>Hi, <span>{firstName}</span> 👋</h2>
+                <p>Stay connected with your people.</p>
+              </div>
+              <div className="welcome-orb" aria-hidden="true"><span>✦</span></div>
             </section>
-          </div>
+
+            <div className="inbox-title-row">
+              <div><p className="eyebrow">YOUR MESSAGES</p><h3>Chats <span className="chat-total">{chats.length}</span></h3></div>
+              <button className="new-chat-button" type="button" onClick={() => setNewChatOpen(true)}><span>＋</span> New chat</button>
+            </div>
+
+            <label className="inbox-search glass-panel">
+              <span aria-hidden="true">⌕</span>
+              <input value={chatSearch} onChange={(event) => setChatSearch(event.target.value)} placeholder="Search chats, friends…" aria-label="Search chats and friends" />
+              {chatSearch && <button type="button" onClick={() => setChatSearch('')} aria-label="Clear search">×</button>}
+            </label>
+
+            <div className="inbox-list" aria-live="polite">
+              {filteredChats.map((chat) => <button key={chat.conversationId} type="button" className="inbox-chat-row" onClick={() => void selectChat(chat)}>
+                <span className="inbox-avatar">{initialOf(chat.person)}</span>
+                <span className="inbox-chat-copy">
+                  <strong>{nameOf(chat.person)}</strong>
+                  <small>{chat.lastMessage || 'Start the conversation'}</small>
+                </span>
+                <span className="inbox-chat-meta">{chat.lastAt ? new Date(chat.lastAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''}<span className="inbox-chevron">›</span></span>
+              </button>)}
+              {!filteredChats.length && <div className="inbox-empty glass-panel">
+                <div className="inbox-empty-icon">✉</div>
+                <h4>{chatSearch ? 'No matching chats' : 'Your inbox is ready'}</h4>
+                <p>{chatSearch ? 'Try another name or message.' : 'Start a conversation with someone in your friends list.'}</p>
+                {!chatSearch && <button type="button" className="button button-primary" onClick={() => setNewChatOpen(true)}>Start a new chat</button>}
+              </div>}
+            </div>
+
+            {newChatOpen && <div className="modal-scrim" role="presentation" onClick={() => setNewChatOpen(false)}>
+              <section className="new-chat-modal glass-panel" role="dialog" aria-modal="true" aria-labelledby="new-chat-title" onClick={(event) => event.stopPropagation()}>
+                <div className="modal-heading"><div><p className="eyebrow">START A CONVERSATION</p><h3 id="new-chat-title">New chat</h3></div><button type="button" className="icon-button" onClick={() => setNewChatOpen(false)} aria-label="Close">×</button></div>
+                {friends.length ? friends.map((friend) => <button type="button" className="new-chat-friend" key={friend.requestId} onClick={() => void openChat(friend.person)} disabled={chatBusy}>
+                  <span className="inbox-avatar">{initialOf(friend.person)}</span><span><strong>{nameOf(friend.person)}</strong><small>@{friend.person.username}</small></span><b>Message ›</b>
+                </button>) : <div className="quiet-empty">You don't have accepted friends yet. Accept a request or find someone first.</div>}
+              </section>
+            </div>}
+          </> : <>
+            <section className="conversation-screen">
+              <header className="conversation-topbar">
+                <button type="button" className="back-to-inbox" onClick={() => { setActiveChatId(''); setChatMessages([]); void refreshChats() }}><span>‹</span> Chats</button>
+                <div className="conversation-person">
+                  <span className="inbox-avatar small">{initialOf(chats.find((chat) => chat.conversationId === activeChatId)?.person)}</span>
+                  <span><strong>{nameOf(chats.find((chat) => chat.conversationId === activeChatId)?.person)}</strong><small>Private conversation</small></span>
+                </div>
+                <span className="secure-chip"><i /> Private</span>
+              </header>
+              <div className="conversation-messages" aria-live="polite">
+                {chatLoading && !chatMessages.length && <p className="quiet-empty">Loading messages…</p>}
+                {!chatLoading && !chatMessages.length && <div className="conversation-empty"><span>✦</span><strong>Say hello.</strong><p>Your conversation is private to its two members.</p></div>}
+                {chatMessages.map((item) => <div key={item.id} className={`chat-message-row ${item.sender_id === userId ? 'mine' : 'theirs'}`}>
+                  <div className="chat-bubble"><p>{item.content}</p><time>{new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time></div>
+                </div>)}
+              </div>
+              <form className="chat-compose" onSubmit={sendChatMessage}>
+                <input value={chatDraft} onChange={(event) => setChatDraft(event.target.value)} maxLength={5000} placeholder="Write a message…" aria-label="Message" />
+                <button className="button button-primary" type="submit" disabled={chatBusy || !chatDraft.trim()}>{chatBusy ? 'Sending…' : 'Send'}</button>
+              </form>
+            </section>
+          </>}
         </section>}
 
         {tab === 'profile' && <section className="content-stack profile-layout">
