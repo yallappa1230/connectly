@@ -1252,7 +1252,55 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
                 <button type="submit" className="composer-send-button" aria-label="Send message" title="Send message" disabled={chatBusy || !chatDraft.trim()}>{chatBusy ? '…' : '➤'}</button>
               </form>
             </section>
+          </>}
         </section>}
+
+        {tab === 'updates' && <section className="content-stack whatsapp-placeholder-page">
+          <div className="inbox-title-row"><div><p className="eyebrow">UPDATES</p><h3>Status</h3></div></div>
+          <div className="inbox-empty glass-panel"><div className="inbox-empty-icon">◉</div><h4>Status updates are coming next</h4><p>Share short-lived photos, text and updates with the people you choose. This section will appear here when status privacy and media storage are ready.</p></div>
+        </section>}
+
+        {tab === 'communities' && <section className="content-stack whatsapp-placeholder-page">
+          <div className="inbox-title-row"><div><p className="eyebrow">YOUR GROUPS</p><h3>Communities</h3></div></div>
+          <div className="inbox-list whatsapp-chat-list">
+            {chats.filter((chat) => chat.isGroup).map((chat) => <button type="button" className="inbox-chat-row" key={chat.conversationId} onClick={() => void selectChat(chat)}>
+              <span className="inbox-avatar group-avatar">♧</span>
+              <span className="inbox-chat-copy"><strong>{chat.title || 'Group chat'}</strong><small>{chat.lastMessage || `${chat.memberCount} members`}</small></span>
+              <span className="inbox-chat-meta"><time>{formatChatTime(chat.lastAt)}</time></span>
+            </button>)}
+            {!chats.some((chat) => chat.isGroup) && <div className="inbox-empty glass-panel"><div className="inbox-empty-icon">♧</div><h4>No communities yet</h4><p>Group conversations will show here. Group creation and community tools are planned for the next phase.</p></div>}
+          </div>
+        </section>}
+
+        {tab === 'calls' && <section className="content-stack whatsapp-placeholder-page">
+          <div className="inbox-title-row"><div><p className="eyebrow">CONNECTLY CALLS</p><h3>Call a friend</h3></div></div>
+          <div className="inbox-list whatsapp-chat-list">
+            {friends.map((friend) => <article className="inbox-chat-row whatsapp-call-row" key={friend.requestId}>
+              <span className="inbox-avatar">{friend.person.avatar_url ? <img src={friend.person.avatar_url} alt="" /> : initialOf(friend.person)}</span>
+              <span className="inbox-chat-copy"><strong>{nameOf(friend.person)}</strong><small>@{friend.person.username}</small></span>
+              <span className="call-list-actions">
+                <button type="button" className="conversation-action-button" title="Audio call" aria-label={`Audio call ${nameOf(friend.person)}`} disabled={!!callState} onClick={() => void startCall(friend.person, 'audio')}>☎</button>
+                <button type="button" className="conversation-action-button" title="Video call" aria-label={`Video call ${nameOf(friend.person)}`} disabled={!!callState} onClick={() => void startCall(friend.person, 'video')}>▣</button>
+              </span>
+            </article>)}
+            {!friends.length && <div className="inbox-empty glass-panel"><div className="inbox-empty-icon">☎</div><h4>No friends to call yet</h4><p>Accept a friend request before starting a private audio or video call.</p></div>}
+          </div>
+        </section>}
+
+        {newChatOpen && <div className="modal-scrim" role="presentation" onClick={() => setNewChatOpen(false)}>
+          <section className="new-chat-modal glass-panel" role="dialog" aria-modal="true" aria-labelledby="new-chat-title" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-heading"><div><p className="eyebrow">START A CONVERSATION</p><h3 id="new-chat-title">New chat</h3></div><button type="button" className="icon-button" onClick={() => setNewChatOpen(false)} aria-label="Close new chat">×</button></div>
+            <label className="inbox-search glass-panel"><span>⌕</span><input value={chatSearch} onChange={(event) => setChatSearch(event.target.value)} placeholder="Search your friends…" aria-label="Search friends" /></label>
+            {friends.filter((friend) => {
+              const term = chatSearch.trim().toLowerCase()
+              return !term || nameOf(friend.person).toLowerCase().includes(term) || friend.person.username.toLowerCase().includes(term)
+            }).map((friend) => <button type="button" className="new-chat-friend" key={friend.requestId} onClick={() => { setNewChatOpen(false); setChatSearch(''); void openChat(friend.person) }}>
+              <span className="inbox-avatar small">{friend.person.avatar_url ? <img src={friend.person.avatar_url} alt="" /> : initialOf(friend.person)}</span>
+              <span><strong>{nameOf(friend.person)}</strong><small>@{friend.person.username}</small></span><b>Message</b>
+            </button>)}
+            {!friends.length && <p className="quiet-empty">Accepted friends will appear here.</p>}
+          </section>
+        </div>}
 
           {selectedPerson && <div className="modal-scrim profile-modal-scrim" role="presentation" onClick={() => setSelectedPerson(null)}>
             <section className="person-profile-modal glass-panel" role="dialog" aria-modal="true" aria-labelledby="person-profile-title" onClick={(event) => event.stopPropagation()}>
@@ -1301,6 +1349,11 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
                 <span className="theme-preview theme-preview-glass" /><span><strong>Liquid Glass</strong><small>Frosted surfaces</small></span>{theme === 'glass' && <b>✓</b>}
               </button>
             </div>
+          </div>
+          <div className="form-panel glass-panel encryption-status-panel">
+            <div className="section-heading"><div><p className="eyebrow">PRIVACY & SECURITY</p><h3>End-to-end encryption</h3></div><span className="encryption-pending-label">Not enabled</span></div>
+            <p className="encryption-status-copy">Connectly is not end-to-end encrypted yet. Current message text is stored as readable content in the database, although traffic is protected by HTTPS and account-level access controls. Do not treat the current chat as suitable for highly sensitive information.</p>
+            <p className="encryption-status-copy">The planned implementation uses an audited browser-compatible protocol with per-device identity keys, signed prekeys, one-time prekeys, ratcheting message keys, encrypted backups and safety-number verification. Encryption will only be enabled after two-device and key-recovery tests.</p>
           </div>
           <div className="form-panel glass-panel"><div className="section-heading"><div><p className="eyebrow">PERSONAL DETAILS</p><h3>Edit profile</h3></div></div>
             <form className="stack-form" onSubmit={saveProfile}><label className="field-label">Full name<input value={fullName} onChange={(e) => setFullName(e.target.value)} maxLength={80} placeholder="Your name" /></label><label className="field-label">Username<div className="input-prefix"><span>@</span><input value={username} onChange={(e) => setUsername(e.target.value)} maxLength={40} placeholder="yourname" /></div></label><label className="field-label">Email address<input value={email} disabled /></label><p className="muted small-text">Username: 3–40 characters, lowercase letters, numbers, dots and underscores.</p><button className="button button-primary" type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save changes'}</button></form>
