@@ -2001,3 +2001,61 @@ body:has(.app-shell[data-theme="glass"]) {
     -webkit-backdrop-filter: none;
   }
 }
+
+
+/* Group creation and four-item WhatsApp-style mobile dock */
+.new-chat-mode-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+  padding: 4px;
+  margin: 0 0 14px;
+  border: 1px solid var(--app-line);
+  border-radius: 12px;
+  background: var(--app-panel);
+}
+.new-chat-mode-switch button {
+  min-height: 34px;
+  border: 0;
+  border-radius: 9px;
+  color: var(--app-muted);
+  background: transparent;
+  font-size: 10px;
+  font-weight: 700;
+}
+.new-chat-mode-switch button.selected {
+  color: #06251f;
+  background: #00a884;
+}
+.group-create-form { gap: 10px; }
+.group-member-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 54px;
+  padding: 6px 2px;
+  border-bottom: 1px solid var(--app-line);
+  cursor: pointer;
+}
+.group-member-option > span:nth-child(2) { display: grid; flex: 1; gap: 3px; min-width: 0; }
+.group-member-option strong { color: var(--app-text); font-size: 11px; }
+.group-member-option small { color: var(--app-muted); font-size: 9px; }
+.group-member-option input { width: 18px; height: 18px; accent-color: #00a884; }
+.app-shell .mobile-nav {
+  grid-template-columns: repeat(4,minmax(0,1fr));
+}
+.app-shell .mobile-nav button {
+  min-width: 0;
+  min-height: 53px;
+}
+.app-shell .mobile-nav button > span { font-size: 19px; }
+.app-shell .mobile-nav small { font-size: 8px; }
+@media (max-width: 680px) {
+  .app-shell .mobile-nav {
+    grid-template-columns: repeat(4,minmax(0,1fr));
+    padding-bottom: calc(7px + env(safe-area-inset-bottom));
+  }
+  .app-shell .mobile-nav button { min-height: 48px; }
+  .app-shell .mobile-nav small { font-size: 7.5px; }
+  .group-member-option { min-height: 51px; }
+}
