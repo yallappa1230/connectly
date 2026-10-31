@@ -1009,6 +1009,10 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
 
   async function deleteOwnMessage(item: MessageRow) {
     if (item.sender_id !== userId) return
+    if (!window.confirm('Delete this message for everyone in this conversation?')) {
+      setMessageMenuFor(null)
+      return
+    }
     const { error: deleteError } = await supabase.from('messages').delete().eq('id', item.id).eq('sender_id', userId)
     if (deleteError) { setError(deleteError.message); return }
     setMessageMenuFor(null)
@@ -1103,6 +1107,8 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
       return
     }
     setChatSettings((items) => ({ ...items, [conversationId]: { ...row } }))
+    setChatMenuFor(null)
+    await refreshChats()
   }
 
   async function markChatUnread(chat: ChatSummary) {
@@ -1200,7 +1206,7 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
             <span className="topbar-brand-copy"><strong>Connectly</strong><small>YOUR PRIVATE SOCIAL SPACE</small></span>
           </a>
           <div className="topbar-actions">
-            <button type="button" className="topbar-icon-button" aria-label="Photo sharing coming next" title="Photo sharing is coming next" disabled>▣</button>
+            <button type="button" className="topbar-icon-button" aria-label="Open updates" title="Updates" onClick={() => setTab('updates')}>▣</button>
             <button type="button" className="topbar-icon-button" aria-label="Search chats" title="Search chats" onClick={() => { setTab('chats'); setShowInboxSearch((value) => !value) }}>⌕</button>
             <button type="button" className="topbar-icon-button" aria-label="More options" title="More options" onClick={() => setMoreMenuOpen((value) => !value)}>⋮</button>
             {moreMenuOpen && <div className="topbar-more-menu">
