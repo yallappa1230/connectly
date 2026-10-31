@@ -836,7 +836,7 @@ a { color: inherit; text-decoration: none; }
 
 /* The bottom dock is the only quick section navigation on phones. */
 .app-shell .mobile-nav {
-  grid-template-columns: repeat(5, minmax(0,1fr));
+  grid-template-columns: repeat(4, minmax(0,1fr));
   gap: 3px;
   padding: 7px 6px calc(7px + env(safe-area-inset-bottom));
   border: 1px solid var(--app-line);
