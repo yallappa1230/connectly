@@ -172,7 +172,7 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
     const summaries: ChatSummary[] = conversations.flatMap((conversation) => {
       const conversationMembers = members.filter((m) => m.conversation_id === conversation.id)
       const otherMembers = conversationMembers.filter((m) => m.user_id !== userId)
-      const person = otherMembers.length === 1 ? people.get(otherMembers[0].user_id) ?? null : null
+      const person = !conversation.is_group && otherMembers.length === 1 ? people.get(otherMembers[0].user_id) ?? null : null
       if (!conversation.is_group && !person) return []
       const last = latest.get(conversation.id)
       const preference = settings.get(conversation.id)
@@ -448,6 +448,7 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
       setActiveChatId(conversation.id)
       setTab('chats')
       await refreshChats()
+      await markChatRead(conversation.id)
       await loadChatMessages(conversation.id)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not open this chat.')
@@ -1103,7 +1104,6 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
     clearFeedback()
     await markChatRead(chat.conversationId)
     await loadChatMessages(chat.conversationId)
-    if (chat.isGroup) return
   }
   return (
     <main className="app-shell" data-theme={theme}>
