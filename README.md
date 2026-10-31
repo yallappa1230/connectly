@@ -61,3 +61,28 @@ Not included: realtime messaging, group chats, QR friend connection, voice/video
 After Netlify assigns a public `.netlify.app` domain, add that exact domain to Supabase Authentication → URL Configuration as the Site URL and an allowed redirect URL (`https://YOUR-SITE.netlify.app/**`). Keep localhost and your Codespaces URL during development.
 
 Do not use a Supabase secret/service-role key in the browser. Before inviting users, apply and verify `supabase/phase-1-security.sql` in the Connectly Supabase SQL Editor, then test with two accounts. This repo's friend/RLS setup is not a substitute for a full security review.
+
+
+## Badge-free free hosting path (Cloudflare Workers)
+
+Netlify currently marks the "Powered by Netlify" badge as a paid-plan feature. There is no supported free toggle to hide it. This branch is reserved for a separate Cloudflare Workers migration; the existing Netlify deployment and `phase-1-auth-friends` branch remain unchanged.
+
+Cloudflare's current Next.js recommendation is vinext for Workers. It supports Next.js 16 projects, including App Router, route handlers, server rendering, and `proxy.ts`, but is still actively developed. Run the compatibility check before migrating:
+
+```bash
+git fetch origin
+git switch cloudflare-free
+npx vinext check
+```
+
+If the check reports no blocking compatibility issues, initialise the non-destructive Cloudflare setup:
+
+```bash
+npx vinext init --platform=cloudflare
+```
+
+Review the generated files and changes, then test locally before deploying. The normal Next.js `next dev` setup should remain available; use the generated vinext dev/build scripts for the Cloudflare preview and deploy. The Cloudflare account can then import this branch or deploy from the Codespaces terminal with the generated Cloudflare CLI command.
+
+Cloudflare Workers Free currently includes up to 100,000 requests/day and 10 ms CPU time per request. This is a free usage allowance, not an unlimited plan. Check the live limits before production use.
+
+Do not delete the Netlify project yet. Keep it live until the Cloudflare build, Supabase login, email confirmation, and profile page are tested successfully. Cloudflare will issue a different public `workers.dev` address; the Supabase Auth Site URL and Redirect URLs must then be updated to that address.
