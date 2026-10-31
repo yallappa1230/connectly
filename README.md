@@ -102,3 +102,23 @@ Per-user inbox settings are stored in `public.conversation_user_settings`. The m
 **End-to-end encryption is not implemented or enabled in the current release.** The `messages.content` column still stores readable text. HTTPS protects transport, and Supabase authentication/RLS controls data access, but these are not E2EE. Do not use the current app for highly sensitive conversations.
 
 See [SECURITY.md](./SECURITY.md) for the planned cryptographic design, rollout gates, and verification checklist. The current browser-capable candidate for technical evaluation is the official Matrix Rust crypto WebAssembly state machine; it is a cryptographic engine, not a drop-in Supabase messaging integration. A custom Supabase key directory/transport adapter and security review are still required before any E2EE claim.
+
+
+## Inbox and conversation interactions
+
+The Chats screen has WhatsApp-inspired interaction patterns without copying WhatsApp branding: All / Unread / Favorites / Groups filters, inbox search, unread counts, per-chat favorite and mute controls, new chat and new group pickers, friend/request accordions, and a four-section mobile navigation. Message actions include reply, copy, and delete-own-message. Mark unread and mark all as read are per-user preferences in `conversation_user_settings`.
+
+## End-to-end encryption status
+
+**End-to-end encryption is not enabled in Connectly yet.** Supabase Auth plus HTTPS protects the session and network transport, but the current `public.messages.content` values are stored as readable text in PostgreSQL. Do not describe this as E2EE or tell users that only chat participants can read the current message records.
+
+A suitable browser architecture to evaluate is the maintained Matrix JavaScript SDK with its Rust/WASM crypto module. The SDK supports browser clients and exposes E2EE through `initRustCrypto()`, but it requires a Matrix homeserver for device registration, key upload/claims, encrypted event delivery, cross-signing, device verification and encrypted history/key backup. This is an architecture change, not just a client-side switch; Connectly would need to keep Supabase for profiles/friends while moving message transport and key management to the Matrix homeserver, or build and review a comparable service.
+
+Do not roll a home-grown encryption scheme or publish an E2EE lock until the implementation includes:
+- per-device identity and encryption keys generated locally, protected local key storage, and device revocation;
+- authenticated pre-key/device discovery, safety-number or QR verification, and multi-device key sharing;
+- forward secrecy and post-compromise recovery from a reviewed protocol;
+- encrypted file/media payloads and metadata minimization;
+- secure encrypted key backup/recovery, migration handling for existing plaintext messages, and independent security review.
+
+The official Signal `libsignal` repository describes the TypeScript package as a Node add-on and says external use is unsupported; it is not a drop-in browser dependency for this Next.js client. The Matrix browser SDK is the practical candidate to prototype, subject to choosing a homeserver and testing device/key flows. Keep the in-chat security notice visible until E2EE is genuinely active and verified.
