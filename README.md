@@ -45,3 +45,19 @@ Use two separate test accounts. Verify signup, email confirmation, sign-in/out, 
 Included: signup, login, logout, email confirmation callback, password reset, profile editing, username search, incoming/outgoing friend requests, accepted friendships, unfriend, and block/unblock.
 
 Not included: realtime messaging, group chats, QR friend connection, voice/video calls, stories, AI features, media uploads, or end-to-end encryption.
+
+
+## Deploy publicly on Netlify (without Vercel)
+
+1. Open https://app.netlify.com/start and sign in with GitHub.
+2. Choose **Add new project → Import an existing project** and authorize Netlify to access `yallappa1230/connectly`.
+3. Select the `phase-1-auth-friends` branch as the production branch (do not choose `main` yet).
+4. Keep the root directory as the repository root. Netlify detects Next.js; `netlify.toml` sets Node.js 22 and `npm run build`.
+5. Add these environment variables in Project configuration → Environment variables, for Production and Deploy Previews:
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+6. Deploy. Netlify's Next.js adapter supports App Router, route handlers, and server rendering.
+
+After Netlify assigns a public `.netlify.app` domain, add that exact domain to Supabase Authentication → URL Configuration as the Site URL and an allowed redirect URL (`https://YOUR-SITE.netlify.app/**`). Keep localhost and your Codespaces URL during development.
+
+Do not use a Supabase secret/service-role key in the browser. Before inviting users, apply and verify `supabase/phase-1-security.sql` in the Connectly Supabase SQL Editor, then test with two accounts. This repo's friend/RLS setup is not a substitute for a full security review.
