@@ -89,3 +89,16 @@ To test, use two separate signed-in devices/accounts that are accepted friends:
 4. Block or remove the friendship and verify new calls are rejected.
 
 Calls require HTTPS and browser permission for microphone/camera. If permissions are denied, enable them in the browser's site settings.
+
+
+## WhatsApp-inspired inbox update
+
+The Chats workspace now includes All, Unread, Favorites, and Groups filters; per-user favorite/mute preferences; a last-read cursor for unread counts; a floating new-chat action; direct chat creation from accepted friends; group creation; emoji insertion; date separators; and an in-app Calls destination. Updates/Status remains a clearly labelled coming-next section. File/media attachment controls remain disabled until private storage and attachment permissions are implemented.
+
+Per-user inbox settings are stored in `public.conversation_user_settings`. The matching SQL is in `supabase/conversation-user-settings.sql`.
+
+## End-to-end encryption status
+
+**End-to-end encryption is not implemented or enabled in the current release.** The `messages.content` column still stores readable text. HTTPS protects transport, and Supabase authentication/RLS controls data access, but these are not E2EE. Do not use the current app for highly sensitive conversations.
+
+See [SECURITY.md](./SECURITY.md) for the planned cryptographic design, rollout gates, and verification checklist. The current browser-capable candidate for technical evaluation is the official Matrix Rust crypto WebAssembly state machine; it is a cryptographic engine, not a drop-in Supabase messaging integration. A custom Supabase key directory/transport adapter and security review are still required before any E2EE claim.
