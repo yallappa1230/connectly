@@ -122,3 +122,24 @@ Do not roll a home-grown encryption scheme or publish an E2EE lock until the imp
 - secure encrypted key backup/recovery, migration handling for existing plaintext messages, and independent security review.
 
 The official Signal `libsignal` repository describes the TypeScript package as a Node add-on and says external use is unsupported; it is not a drop-in browser dependency for this Next.js client. The Matrix browser SDK is the practical candidate to prototype, subject to choosing a homeserver and testing device/key flows. Keep the in-chat security notice visible until E2EE is genuinely active and verified.
+
+
+## Connectly Feature Pack
+
+This feature set is deployed against the Supabase project and its source is kept in this repository:
+
+- `supabase/connectly-feature-pack.sql`: reactions, private attachment metadata, saved messages, privacy settings, reports, short-lived QR tokens, friend request privacy checks, and private `chat-media` storage policies.
+- `supabase/functions/qr-render/index.ts`: authenticated QR SVG renderer for one-time friend connection codes.
+
+### Messaging
+- React to a message, save it to Connectly Notes, upload supported photos/videos/documents, and record a voice note.
+- Chat media is stored in a private bucket. Object access is restricted by conversation membership. Signed media URLs expire after one hour.
+- File upload limit: 25 MB per file. Allowed types are configured on the private bucket.
+
+### Privacy and safety
+- Per-user settings control discoverability, friend requests and read receipts.
+- Users can report another account, block and unblock people, and keep personal saved messages.
+- QR codes carry a random 256-bit token. Only a SHA-256 hash is stored in the database. Tokens expire after 10 minutes, can be revoked, and can be redeemed once.
+
+### E2EE status
+**End-to-end encryption is still not enabled.** Message text is currently stored as readable content in PostgreSQL. HTTPS and RLS are not E2EE. The interface must not display an E2EE lock until a reviewed device-key protocol, key verification, encrypted attachment flow, key recovery and multi-device tests have been completed.
