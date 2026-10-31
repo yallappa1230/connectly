@@ -1213,3 +1213,64 @@ body:has(.app-shell[data-theme="glass"]) .app-shell .mobile-nav {
   .inbox-friend-row .button { min-height: 32px; padding: 6px 9px; font-size: 9px; }
   .inbox-friend-row .icon-button { width: 29px; min-width: 29px; height: 29px; }
 }
+
+
+/* Simplified People + Chats navigation and mobile account controls. */
+.app-shell .mobile-nav { grid-template-columns: repeat(3,minmax(0,1fr)); }
+.people-requests-section {
+  display: grid;
+  gap: 10px;
+  margin: 2px 0 5px;
+}
+.people-requests-section .section-heading h3 { font-size: 17px; }
+.people-requests-section .list-panel { padding-top: 5px; padding-bottom: 5px; }
+.people-requests-section .request-row .avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+.inbox-chat-meta { display: flex; align-items: center; }
+.inbox-friend-profile-button {
+  appearance: none;
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--app-line);
+  color: var(--app-text);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+.inbox-friend-profile-button:hover,
+.inbox-friend-profile-button:focus-visible {
+  outline: none;
+  background: color-mix(in srgb,var(--app-accent) 7%,transparent);
+}
+.friend-profile-hint {
+  color: var(--app-accent);
+  font-size: 9px;
+  white-space: nowrap;
+}
+.person-profile-actions {
+  display: grid;
+  grid-template-columns: repeat(2,minmax(0,1fr));
+  gap: 8px;
+  margin: 4px 0 11px;
+}
+.person-profile-actions .button:first-child { grid-column: 1 / -1; }
+.button-danger {
+  border: 1px solid rgba(227,91,110,.28);
+  color: #ff9ba9;
+  background: rgba(227,91,110,.10);
+}
+.button-danger:hover { background: rgba(227,91,110,.18); }
+.mobile-profile-signout {
+  width: 100%;
+  min-height: 44px;
+}
+@media (max-width: 680px) {
+  .app-shell .mobile-nav { grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .inbox-friend-row { min-height: 65px; }
+  .friend-profile-hint { display: inline; }
+  .person-profile-actions { grid-template-columns: 1fr 1fr; }
+}
