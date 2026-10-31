@@ -167,36 +167,6 @@ Connectly-specific feature:
 Apply the additive migration in `supabase/connectly-inbox-and-tasks.sql` to any separate development database before deploying this branch there. It has already been applied to the connected Connectly Supabase project. Keep `main` unchanged while testing this branch.
 
 
-## Cross-platform Connectly app packages
-
-The `src-tauri` project wraps the deployed Connectly website as a Tauri 2 application. It is built in GitHub Actions for:
-- Android ARM64: an installable debug-signed `.apk` for compatible Android phones.
-- Windows x64: an NSIS setup `.exe`.
-- Linux x64: a Debian `.deb` installer.
-
-### Important: online wrapper
-
-This first native package loads `https://connectly-gamma-lyart.vercel.app` from the network. It is not an offline export of the Next.js application. A working internet connection is required, and the content shown inside the app follows whatever version is currently deployed at that Vercel address. Deploy the intended feature branch to that website before distributing these packages.
-
-### Build and download
-
-Open **GitHub → Actions → Build Connectly apps** and select **Run workflow** on `phase-1-auth-friends`. When all three jobs complete, download these workflow artifacts:
-- `connectly-android-apk-arm64`
-- `connectly-windows-setup-exe`
-- `connectly-linux-deb-amd64`
-
-The APK is signed with the runner's development/debug signing key so it can be installed for testing. This is not a Google Play release key. Because CI runners are temporary, a later APK may use a different debug certificate; to install a new test build over an older one, Android may require the old test app to be uninstalled first. A private, persistent release keystore should be configured through GitHub Actions secrets before public release.
-
-The Windows installer is not code-signed, so Windows may display an unknown-publisher / SmartScreen warning. A publisher certificate is needed for a trusted public Windows release. The Linux `.deb` package is unsigned and requires the listed WebKitGTK/GTK runtime libraries.
-
-### Build settings
-
-- Tauri app identifier: `com.connectly.app`
-- Android minimum SDK: 24 (Android 7.0); built for ARM64 in this workflow.
-- Generated `src-tauri/gen` and `src-tauri/target` folders are build output and are intentionally ignored by Git.
-- The Tauri wrapper does not enable end-to-end encryption. The existing Connectly E2EE status remains unchanged.
-
-
 ## Android, Windows and Linux apps
 
 This branch contains native app shells for the hosted Connectly web application:
