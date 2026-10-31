@@ -10,7 +10,7 @@ type BlockRow = { blocker_id: string; blocked_id: string; created_at: string; pe
 type ConversationRow = { id: string; title: string | null; is_group: boolean; direct_key: string | null; created_at: string }
 type MessageRow = { id: string; conversation_id: string; sender_id: string; content: string; created_at: string }
 type ChatSummary = { conversationId: string; person: Profile; lastMessage?: string; lastAt?: string }
-type Tab = 'discover'|'requests'|'chats'|'profile'
+type Tab = 'discover'|'chats'|'profile'
 type Theme = 'black'|'white'|'glass'
 
 const emptyProfile: Profile = { id: '', username: '', full_name: '', avatar_url: null }
@@ -22,7 +22,6 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
   const [tab, setTab] = useState<Tab>('chats')
   const [theme, setTheme] = useState<Theme>('black')
   const [chatSearch, setChatSearch] = useState('')
-  const [newChatOpen, setNewChatOpen] = useState(false)
   const [selectedPerson, setSelectedPerson] = useState<Profile | null>(null)
   const [profile, setProfile] = useState<Profile>(initialProfile ?? emptyProfile)
   const [incoming, setIncoming] = useState<RequestRow[]>([])
@@ -437,8 +436,7 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
 
   const navItems: { id: Tab; icon: string; label: string; count?: number }[] = [
     { id: 'chats', icon: '▤', label: 'Chats' },
-    { id: 'requests', icon: '✉', label: 'Requests', count: incoming.length },
-    { id: 'discover', icon: '⌕', label: 'Discover' },
+    { id: 'discover', icon: '⌕', label: 'People', count: incoming.length },
     { id: 'profile', icon: '◉', label: 'Profile' },
   ]
   const firstName = profile.full_name?.trim().split(/\s+/)[0] || profile.username || 'there'
@@ -490,6 +488,18 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
         {tab === 'discover' && <section className="content-stack">
           <div className="welcome-panel glass-panel"><div className="welcome-copy"><p className="eyebrow">A LITTLE CLOSER, EVERY DAY</p><h3>Good connections<br /><span>start with hello.</span></h3><p>Search by username and invite the people you want in your circle.</p></div><div className="welcome-orbit"><div className="orbit-core">C</div><span className="orbit-dot orbit-dot-one">✦</span><span className="orbit-dot orbit-dot-two">♡</span><span className="orbit-dot orbit-dot-three">✧</span></div></div>
           <div className="section-heading"><div><p className="eyebrow">DISCOVER</p><h3>Find friends</h3></div><span className="muted small-text">Search public usernames</span></div>
+          <section className="people-requests-section">
+            <div className="section-heading"><div><p className="eyebrow">YOUR INBOX</p><h3>Received requests <span className="heading-count">{incoming.length}</span></h3></div></div>
+            <div className="list-panel glass-panel">
+              {incoming.map((request) => <div className="list-row request-row" key={request.id}>
+                <div className="avatar">{request.person?.avatar_url ? <img src={request.person.avatar_url} alt="" /> : initialOf(request.person)}</div>
+                <div className="list-person"><strong>{nameOf(request.person)}</strong><span>@{request.person?.username}</span></div>
+                <button className="button button-primary" onClick={() => respond(request, 'accepted')} disabled={busy}>Accept</button>
+                <button className="button button-subtle" onClick={() => respond(request, 'declined')} disabled={busy}>Decline</button>
+              </div>)}
+              {!incoming.length && <div className="quiet-empty">No received requests right now.</div>}
+            </div>
+          </section>
           <form className="search-bar glass-panel" onSubmit={searchPeople}><span className="search-symbol">⌕</span><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search username…" aria-label="Search username" /><button className="button button-primary" type="submit" disabled={busy}>{busy ? 'Searching…' : 'Search'}</button></form>
           <div className="people-grid">
             {results.map((person) => <article className="person-card glass-panel" key={person.id}>
@@ -499,13 +509,6 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
             {!results.length && !loading && <div className="empty-state glass-panel"><div className="empty-icon">✧</div><h4>Your next connection is out there.</h4><p>Search a username above to discover someone on Connectly.</p></div>}
             {loading && <div className="empty-state glass-panel"><div className="loader-dot" /><p>Loading your space…</p></div>}
           </div>
-        </section>}
-
-        {tab === 'requests' && <section className="content-stack">
-          <div className="section-heading"><div><p className="eyebrow">YOUR INBOX</p><h3>Incoming requests <span className="heading-count">{incoming.length}</span></h3></div></div>
-          <div className="list-panel glass-panel">{incoming.map((request) => <div className="list-row request-row" key={request.id}><div className="avatar">{initialOf(request.person)}</div><div className="list-person"><strong>{nameOf(request.person)}</strong><span>@{request.person?.username}</span></div><button className="button button-primary" onClick={() => respond(request, 'accepted')} disabled={busy}>Accept</button><button className="button button-subtle" onClick={() => respond(request, 'declined')} disabled={busy}>Decline</button></div>)}{!incoming.length && <div className="quiet-empty">No incoming requests right now.</div>}</div>
-          <div className="section-heading"><div><p className="eyebrow">WAITING FOR A REPLY</p><h3>Sent requests <span className="heading-count">{outgoing.length}</span></h3></div></div>
-          <div className="list-panel glass-panel">{outgoing.map((request) => <div className="list-row" key={request.id}><div className="avatar avatar-muted">{initialOf(request.person)}</div><div className="list-person"><strong>{nameOf(request.person)}</strong><span>@{request.person?.username}</span></div><span className="pending-badge">Pending</span><button className="button button-subtle" onClick={() => cancelRequest(request)} disabled={busy}>Cancel</button></div>)}{!outgoing.length && <div className="quiet-empty">You have no pending sent requests.</div>}</div>
         </section>}
 
         {tab === 'chats' && <section className="inbox-layout">
@@ -521,7 +524,6 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
 
             <div className="inbox-title-row">
               <div><p className="eyebrow">YOUR MESSAGES</p><h3>Chats <span className="chat-total">{chats.length}</span></h3></div>
-              <button className="new-chat-button" type="button" onClick={() => setNewChatOpen(true)}><span>＋</span> New chat</button>
             </div>
 
             <label className="inbox-search glass-panel">
@@ -537,13 +539,12 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
                   <strong>{nameOf(chat.person)}</strong>
                   <small>{chat.lastMessage || 'Start the conversation'}</small>
                 </span>
-                <span className="inbox-chat-meta">{chat.lastAt ? new Date(chat.lastAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''}<span className="inbox-chevron">›</span></span>
+                <span className="inbox-chat-meta"><span className="inbox-chevron">›</span></span>
               </button>)}
               {!filteredChats.length && <div className="inbox-empty glass-panel">
                 <div className="inbox-empty-icon">✉</div>
                 <h4>{chatSearch ? 'No matching chats' : 'Your inbox is ready'}</h4>
                 <p>{chatSearch ? 'Try another name or message.' : 'Start a conversation with someone in your friends list.'}</p>
-                {!chatSearch && <button type="button" className="button button-primary" onClick={() => setNewChatOpen(true)}>Start a new chat</button>}
               </div>}
             </div>
 
@@ -553,24 +554,14 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
                 <button type="button" className="text-button" onClick={() => setTab('discover')}>Find people</button>
               </div>
               {friends.length ? <div className="inbox-friends-list">
-                {friends.map((friend) => <article className="inbox-friend-row" key={friend.requestId}>
+                {friends.map((friend) => <button type="button" className="inbox-friend-row inbox-friend-profile-button" key={friend.requestId} onClick={() => void showPersonDetails(friend.person)} aria-label={`Open ${nameOf(friend.person)} profile`}>
                   <span className="inbox-avatar">{friend.person.avatar_url ? <img src={friend.person.avatar_url} alt="" /> : initialOf(friend.person)}</span>
                   <span className="inbox-friend-copy"><strong>{nameOf(friend.person)}</strong><small>@{friend.person.username}</small></span>
-                  <button type="button" className="button button-primary" onClick={() => void openChat(friend.person)} disabled={chatBusy}>Message</button>
-                  <button type="button" className="icon-button" title="Remove friend" aria-label={`Remove ${nameOf(friend.person)}`} onClick={() => unfriend(friend)} disabled={busy}>−</button>
-                  <button type="button" className="icon-button danger-icon" title="Block friend" aria-label={`Block ${nameOf(friend.person)}`} onClick={() => blockPerson(friend.person)} disabled={busy}>⊘</button>
-                </article>)}
+                  <span className="friend-profile-hint">View profile ›</span>
+                </button>)}
               </div> : <div className="inbox-friends-empty">Your accepted friends will appear here. <button type="button" className="text-button" onClick={() => setTab('discover')}>Discover people</button></div>}
             </section>
 
-            {newChatOpen && <div className="modal-scrim" role="presentation" onClick={() => setNewChatOpen(false)}>
-              <section className="new-chat-modal glass-panel" role="dialog" aria-modal="true" aria-labelledby="new-chat-title" onClick={(event) => event.stopPropagation()}>
-                <div className="modal-heading"><div><p className="eyebrow">START A CONVERSATION</p><h3 id="new-chat-title">New chat</h3></div><button type="button" className="icon-button" onClick={() => setNewChatOpen(false)} aria-label="Close">×</button></div>
-                {friends.length ? friends.map((friend) => <button type="button" className="new-chat-friend" key={friend.requestId} onClick={() => void openChat(friend.person)} disabled={chatBusy}>
-                  <span className="inbox-avatar">{initialOf(friend.person)}</span><span><strong>{nameOf(friend.person)}</strong><small>@{friend.person.username}</small></span><b>Message ›</b>
-                </button>) : <div className="quiet-empty">You don't have accepted friends yet. Accept a request or find someone first.</div>}
-              </section>
-            </div>}
           </> : <>
             <section className="conversation-screen">
               <header className="conversation-topbar">
@@ -611,7 +602,18 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
                 <div><small>Full name</small><strong>{selectedPerson.full_name?.trim() || 'Not provided'}</strong></div>
                 <div><small>Username</small><strong>@{selectedPerson.username}</strong></div>
               </div>
-              <button type="button" className="button button-primary button-wide" onClick={() => setSelectedPerson(null)}>Close</button>
+              <div className="person-profile-actions">
+                <button type="button" className="button button-primary" onClick={() => { const person = selectedPerson; setSelectedPerson(null); void openChat(person) }} disabled={chatBusy}>Message</button>
+                <button type="button" className="button button-subtle" onClick={() => {
+                  const friend = friends.find((item) => item.person.id === selectedPerson.id)
+                  if (friend) {
+                    setSelectedPerson(null)
+                    void unfriend(friend)
+                  }
+                }} disabled={busy || !friends.some((item) => item.person.id === selectedPerson.id)}>Remove friend</button>
+                <button type="button" className="button button-danger" onClick={() => { const person = selectedPerson; setSelectedPerson(null); void blockPerson(person) }} disabled={busy}>Block</button>
+              </div>
+              <button type="button" className="button button-subtle button-wide" onClick={() => setSelectedPerson(null)}>Close</button>
             </section>
           </div>}
 
@@ -634,6 +636,7 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
           <div className="form-panel glass-panel"><div className="section-heading"><div><p className="eyebrow">PERSONAL DETAILS</p><h3>Edit profile</h3></div></div>
             <form className="stack-form" onSubmit={saveProfile}><label className="field-label">Full name<input value={fullName} onChange={(e) => setFullName(e.target.value)} maxLength={80} placeholder="Your name" /></label><label className="field-label">Username<div className="input-prefix"><span>@</span><input value={username} onChange={(e) => setUsername(e.target.value)} maxLength={40} placeholder="yourname" /></div></label><label className="field-label">Email address<input value={email} disabled /></label><p className="muted small-text">Username: 3–40 characters, lowercase letters, numbers, dots and underscores.</p><button className="button button-primary" type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save changes'}</button></form>
           </div>
+          <button type="button" className="button button-danger button-wide mobile-profile-signout" onClick={signOut}>Sign out</button>
           <div className="form-panel glass-panel privacy-note"><div className="privacy-icon">◇</div><div><h4>Your privacy matters</h4><p className="muted">Only your profile basics are searchable by signed-in Connectly users. Never put passwords, phone numbers or private details in your public profile.</p></div></div>
         </section>}
 
