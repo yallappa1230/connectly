@@ -6,3 +6,5 @@ out/
 .DS_Store
 *.log
 npm-debug.log*
+src-tauri/target/
+src-tauri/gen/
