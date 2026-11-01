@@ -4,10 +4,6 @@ on:
   push:
     branches:
       - phase-1-auth-friends
-    paths:
-      - "android/**"
-      - "desktop/**"
-      - ".github/workflows/package-apps.yml"
   workflow_dispatch:
 
 permissions:
