@@ -2186,6 +2186,22 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
               </button>
             </div>
           </div>
+          <div className="form-panel glass-panel account-security-panel">
+            <div className="section-heading"><div><p className="eyebrow">ACCOUNT PROTECTION</p><h3>Sign-in verification</h3></div><span className="encryption-pending-label">Setup required</span></div>
+            <p className="encryption-status-copy">Additional sign-in verification is not enabled in this build. The planned options are an email one-time code and device passkeys, which can use your phone or computer's built-in fingerprint, face or screen-lock verification.</p>
+            <div className="security-method-list">
+              <div><span className="security-method-icon">✉</span><span><strong>Email one-time code</strong><small>Verify a sign-in with a short-lived email code.</small></span><em>Planned</em></div>
+              <div><span className="security-method-icon">⌑</span><span><strong>Passkey / device biometrics</strong><small>Use Android, iOS, Windows or browser-supported device verification. Connectly will not receive face or fingerprint images.</small></span><em>Planned</em></div>
+            </div>
+          </div>
+          <div className="form-panel glass-panel notification-settings-panel">
+            <div className="section-heading"><div><p className="eyebrow">STAY IN THE LOOP</p><h3>Push notifications</h3></div><span className="encryption-pending-label">Not connected</span></div>
+            <p className="encryption-status-copy">Cross-platform push delivery is not configured yet. The planned setup supports Android and desktop browsers, installed iPhone/iPad web apps where supported, and packaged apps after platform notification permissions and delivery services are configured.</p>
+            <div className="security-method-list">
+              <div><span className="security-method-icon">▣</span><span><strong>Web & installed app notifications</strong><small>New messages, friend requests and call alerts with per-device controls.</small></span><em>Planned</em></div>
+              <div><span className="security-method-icon">⌘</span><span><strong>Desktop & packaged apps</strong><small>Windows and Linux notification integration; Android native notification channel.</small></span><em>Planned</em></div>
+            </div>
+          </div>
           <div className="form-panel glass-panel encryption-status-panel">
             <div className="section-heading"><div><p className="eyebrow">PRIVACY & SECURITY</p><h3>End-to-end encryption</h3></div><span className="encryption-pending-label">Not enabled</span></div>
             <p className="encryption-status-copy">Connectly is not end-to-end encrypted yet. Current message text is stored as readable content in the database, although traffic is protected by HTTPS and account-level access controls. Do not treat the current chat as suitable for highly sensitive information.</p>
