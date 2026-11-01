@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import type { ReactNode } from 'react'
 import './globals.css'
+import './connectly-polish.css'
 
 export const metadata: Metadata = {
   title: 'Connectly — Your people, your space',
