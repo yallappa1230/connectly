@@ -1,0 +1,152 @@
+/* Connectly visual refresh — additive overrides, preserving existing screens. */
+:root {
+  --connectly-radius-xl: 24px;
+  --connectly-radius-lg: 18px;
+  --connectly-focus: 0 0 0 3px rgba(151, 169, 255, .22);
+}
+
+html { text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; }
+body { letter-spacing: -0.01em; }
+button, input, textarea, select { -webkit-tap-highlight-color: transparent; }
+:focus-visible { outline: 2px solid var(--app-accent, #a98aff); outline-offset: 3px; }
+
+.app-shell {
+  --app-line: rgba(190, 198, 226, .13);
+  --app-shadow: 0 18px 48px rgba(0, 0, 0, .20);
+}
+.app-shell .main-column { max-width: 1480px; }
+.app-shell .topbar { gap: 16px; }
+.app-shell .topbar h2 { letter-spacing: -.045em; }
+.app-shell .section-heading h3 { letter-spacing: -.025em; }
+.app-shell .glass-panel,
+.app-shell .list-panel,
+.app-shell .form-panel,
+.app-shell .person-card,
+.app-shell .profile-hero,
+.app-shell .chat-panel,
+.app-shell .new-chat-modal {
+  border-radius: var(--connectly-radius-lg);
+}
+.app-shell .button,
+.app-shell .icon-button,
+.app-shell .nav-item,
+.app-shell .inbox-filter-chip,
+.app-shell .topbar-icon-button {
+  transition: background-color .18s ease, border-color .18s ease, color .18s ease, transform .18s ease, box-shadow .18s ease;
+}
+.app-shell .button:focus-visible,
+.app-shell .icon-button:focus-visible,
+.app-shell .nav-item:focus-visible,
+.app-shell input:focus-visible,
+.app-shell textarea:focus-visible {
+  outline: none;
+  box-shadow: var(--connectly-focus);
+}
+.app-shell .button-primary { font-weight: 700; }
+.app-shell .search-bar,
+.app-shell .inbox-search,
+.app-shell .chat-compose input,
+.app-shell .field-label input {
+  border-radius: 14px;
+}
+.app-shell .chat-bubble p { line-height: 1.62; }
+.app-shell .whatsapp-chat-row { transition: background-color .16s ease, border-color .16s ease; }
+.app-shell .whatsapp-chat-row:hover { background: color-mix(in srgb, var(--app-accent) 8%, transparent); }
+.app-shell .empty-state,
+.app-shell .chat-no-selection { border: 1px dashed var(--app-line); }
+.app-shell .mobile-nav { padding-bottom: max(8px, env(safe-area-inset-bottom)); }
+
+/* Actual translucent glass: visible background, layered highlights and stronger blur. */
+.app-shell[data-theme="glass"] {
+  --app-bg: #090711;
+  --app-panel: rgba(24, 21, 39, .42);
+  --app-panel-strong: rgba(34, 29, 53, .58);
+  --app-field: rgba(12, 10, 22, .34);
+  --app-line: rgba(231, 222, 255, .20);
+  --app-shadow: 0 20px 60px rgba(0, 0, 0, .28), inset 0 1px 0 rgba(255,255,255,.13);
+  background:
+    radial-gradient(ellipse at 14% 14%, rgba(115, 93, 205, .28), transparent 36%),
+    radial-gradient(ellipse at 86% 22%, rgba(75, 129, 198, .20), transparent 34%),
+    radial-gradient(ellipse at 55% 100%, rgba(156, 91, 189, .15), transparent 38%),
+    #090711;
+  background-attachment: fixed;
+}
+.app-shell[data-theme="glass"] .glass-panel,
+.app-shell[data-theme="glass"] .list-panel,
+.app-shell[data-theme="glass"] .form-panel,
+.app-shell[data-theme="glass"] .person-card,
+.app-shell[data-theme="glass"] .profile-hero,
+.app-shell[data-theme="glass"] .chat-panel,
+.app-shell[data-theme="glass"] .mobile-nav,
+.app-shell[data-theme="glass"] .theme-picker,
+.app-shell[data-theme="glass"] .inbox-search,
+.app-shell[data-theme="glass"] .new-chat-modal,
+.app-shell[data-theme="glass"] .chat-header,
+.app-shell[data-theme="glass"] .chat-compose {
+  background:
+    linear-gradient(145deg, rgba(255,255,255,.105), rgba(255,255,255,.025) 48%, rgba(255,255,255,.045)),
+    rgba(25, 21, 42, .40);
+  border-color: rgba(235, 227, 255, .20);
+  box-shadow: var(--app-shadow);
+  -webkit-backdrop-filter: blur(24px) saturate(165%);
+  backdrop-filter: blur(24px) saturate(165%);
+}
+.app-shell[data-theme="glass"] .chat-messages {
+  background: linear-gradient(180deg, rgba(15, 12, 27, .10), rgba(15, 12, 27, .20));
+}
+.app-shell[data-theme="glass"] .chat-bubble {
+  background: rgba(255,255,255,.085);
+  border-color: rgba(255,255,255,.14);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  backdrop-filter: blur(12px) saturate(140%);
+}
+.app-shell[data-theme="glass"] .chat-message-row.mine .chat-bubble {
+  background: linear-gradient(145deg, rgba(151, 127, 255, .88), rgba(108, 91, 204, .78));
+  border-color: rgba(226, 217, 255, .32);
+}
+.app-shell[data-theme="glass"] .chat-compose input,
+.app-shell[data-theme="glass"] .field-label input,
+.app-shell[data-theme="glass"] .search-bar {
+  background: rgba(8, 7, 17, .28);
+  border-color: rgba(235, 227, 255, .18);
+}
+.app-shell[data-theme="glass"] .nav-item.active,
+.app-shell[data-theme="glass"] .whatsapp-chat-row.selected {
+  background: rgba(180, 158, 255, .15);
+  border-color: rgba(210, 194, 255, .22);
+}
+.app-shell[data-theme="glass"] .ambient { opacity: .24; }
+
+/* White theme: retain contrast rather than applying dark translucent surfaces. */
+.app-shell[data-theme="white"] .glass-panel,
+.app-shell[data-theme="white"] .list-panel,
+.app-shell[data-theme="white"] .form-panel,
+.app-shell[data-theme="white"] .person-card,
+.app-shell[data-theme="white"] .profile-hero {
+  background: rgba(255,255,255,.94);
+  border-color: rgba(37, 42, 65, .10);
+  box-shadow: 0 12px 34px rgba(34, 39, 64, .07);
+}
+.app-shell[data-theme="white"] .chat-bubble { background: #eef0f8; color: #1c2030; }
+.app-shell[data-theme="white"] .chat-message-row.mine .chat-bubble { background: #6e61ca; color: #fff; }
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .app-shell[data-theme="glass"] .glass-panel,
+  .app-shell[data-theme="glass"] .list-panel,
+  .app-shell[data-theme="glass"] .form-panel,
+  .app-shell[data-theme="glass"] .person-card,
+  .app-shell[data-theme="glass"] .mobile-nav,
+  .app-shell[data-theme="glass"] .chat-panel {
+    background: rgba(28, 23, 46, .94);
+  }
+}
+@media (max-width: 680px) {
+  .app-shell .main-column { padding-left: 14px; padding-right: 14px; }
+  .app-shell .content-stack { gap: 16px; }
+  .app-shell .topbar h2 { font-size: clamp(23px, 7vw, 30px); }
+  .app-shell .welcome-panel { border-radius: 20px; }
+  .app-shell .mobile-nav { border-top: 1px solid var(--app-line); }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
