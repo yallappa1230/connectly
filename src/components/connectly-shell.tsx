@@ -2189,7 +2189,14 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
           <div className="form-panel glass-panel encryption-status-panel">
             <div className="section-heading"><div><p className="eyebrow">PRIVACY & SECURITY</p><h3>End-to-end encryption</h3></div><span className="encryption-pending-label">Not enabled</span></div>
             <p className="encryption-status-copy">Connectly is not end-to-end encrypted yet. Current message text is stored as readable content in the database, although traffic is protected by HTTPS and account-level access controls. Do not treat the current chat as suitable for highly sensitive information.</p>
-            <p className="encryption-status-copy">The planned implementation uses an audited browser-compatible protocol with per-device identity keys, signed prekeys, one-time prekeys, ratcheting message keys, encrypted backups and safety-number verification. Encryption will only be enabled after two-device and key-recovery tests.</p>
+            <div className="encryption-roadmap-heading"><strong>Security implementation roadmap</strong><span>0 of 4 complete</span></div>
+            <ol className="encryption-roadmap">
+              <li><span className="encryption-roadmap-number">01</span><span><strong>Device identity & verification</strong><small>Establish per-device keys and a way to verify who you are chatting with.</small></span><em>Planned</em></li>
+              <li><span className="encryption-roadmap-number">02</span><span><strong>Encrypted one-to-one messages</strong><small>Encrypt on the sender's device and decrypt only on the recipient's device.</small></span><em>Planned</em></li>
+              <li><span className="encryption-roadmap-number">03</span><span><strong>Encrypted media & private features</strong><small>Protect attachments, saved messages, previews, search and notifications from plaintext leaks.</small></span><em>Planned</em></li>
+              <li><span className="encryption-roadmap-number">04</span><span><strong>Groups, multiple devices & review</strong><small>Test membership changes, recovery, device removal and independent security review.</small></span><em>Planned</em></li>
+            </ol>
+            <p className="encryption-status-copy">Encryption will remain off until the protocol and every required security test are verified. Existing message history will not be labelled as encrypted.</p>
           </div>
           <div className="form-panel glass-panel">
             <div className="section-heading"><div><p className="eyebrow">PRIVACY CONTROLS</p><h3>Who can find and contact you</h3><p className="muted small-text">These preferences are enforced by the database.</p></div></div>
