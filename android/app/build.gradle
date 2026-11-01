@@ -1,0 +1,31 @@
+plugins {
+    id 'com.android.application'
+}
+
+def connectlyWebUrl = System.getenv('CONNECTLY_WEB_URL') ?: 'https://connectly-gamma-lyart.vercel.app'
+if (!connectlyWebUrl.startsWith('https://')) {
+    throw new GradleException('CONNECTLY_WEB_URL must use HTTPS.')
+}
+
+android {
+    namespace 'com.connectly.app'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'com.connectly.app'
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName '1.0.0'
+        buildConfigField 'String', 'CONNECTLY_WEB_URL', '"' + connectlyWebUrl + '"'
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
