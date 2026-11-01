@@ -2187,12 +2187,13 @@ export function ConnectlyShell({ userId, email, initialProfile }: { userId: stri
             </div>
           </div>
           <div className="form-panel glass-panel account-security-panel">
-            <div className="section-heading"><div><p className="eyebrow">ACCOUNT PROTECTION</p><h3>Sign-in verification</h3></div><span className="encryption-pending-label">Setup required</span></div>
-            <p className="encryption-status-copy">Additional sign-in verification is not enabled in this build. The planned options are an email one-time code and device passkeys, which can use your phone or computer's built-in fingerprint, face or screen-lock verification.</p>
+            <div className="section-heading"><div><p className="eyebrow">ACCOUNT PROTECTION</p><h3>Email verification</h3></div><span className="encryption-pending-label">Available at sign-in</span></div>
+            <p className="encryption-status-copy">Connectly now supports passwordless sign-in with a single-use email code delivered by Supabase Auth. Choose “Email code” on the sign-in screen, request a code, then enter the six digits. Existing password sign-in remains available.</p>
             <div className="security-method-list">
-              <div><span className="security-method-icon">✉</span><span><strong>Email one-time code</strong><small>Verify a sign-in with a short-lived email code.</small></span><em>Planned</em></div>
-              <div><span className="security-method-icon">⌑</span><span><strong>Passkey / device biometrics</strong><small>Use Android, iOS, Windows or browser-supported device verification. Connectly will not receive face or fingerprint images.</small></span><em>Planned</em></div>
+              <div><span className="security-method-icon">✉</span><span><strong>Supabase email OTP</strong><small>Code is verified by Supabase Auth and creates your signed-in session. Supabase rate limits and code expiry apply.</small></span><em>Available</em></div>
+              <div><span className="security-method-icon">⌑</span><span><strong>Passkey / face or fingerprint unlock</strong><small>Not connected yet. Device biometrics require a separate WebAuthn passkey registration and verification flow; Connectly must never collect face or fingerprint images.</small></span><em>Not enabled</em></div>
             </div>
+            <p className="encryption-status-copy">Important: email OTP here is a passwordless sign-in method, not a second factor added after password login. Supabase Auth currently reports email OTP as a primary sign-in method; do not describe it as completed MFA.</p>
           </div>
           <div className="form-panel glass-panel notification-settings-panel">
             <div className="section-heading"><div><p className="eyebrow">STAY IN THE LOOP</p><h3>Push notifications</h3></div><span className="encryption-pending-label">Not connected</span></div>
