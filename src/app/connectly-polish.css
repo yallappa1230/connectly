@@ -223,3 +223,94 @@ button, input, textarea, select { -webkit-tap-highlight-color: transparent; }
     grid-column: 2;
   }
 }
+
+
+/* Cleaner hierarchy and genuinely translucent Liquid Glass surfaces. */
+.app-shell .content-stack { gap: 20px; }
+.app-shell .form-panel,
+.app-shell .list-panel,
+.app-shell .glass-panel { border-width: 1px; }
+.app-shell .section-heading { align-items: flex-start; }
+.app-shell .muted,
+.app-shell .small-text { line-height: 1.55; }
+.app-shell button { min-height: 38px; }
+.app-shell[data-theme="glass"] {
+  --app-panel: rgba(22, 20, 38, .20);
+  --app-panel-strong: rgba(28, 25, 46, .30);
+  --app-field: rgba(9, 8, 19, .18);
+  --app-line: rgba(239, 233, 255, .23);
+  background:
+    radial-gradient(ellipse at 12% 10%, rgba(125, 101, 232, .22), transparent 38%),
+    radial-gradient(ellipse at 88% 18%, rgba(77, 158, 224, .17), transparent 36%),
+    radial-gradient(ellipse at 52% 96%, rgba(175, 105, 220, .12), transparent 40%),
+    #080711;
+}
+.app-shell[data-theme="glass"] .glass-panel,
+.app-shell[data-theme="glass"] .list-panel,
+.app-shell[data-theme="glass"] .form-panel,
+.app-shell[data-theme="glass"] .person-card,
+.app-shell[data-theme="glass"] .profile-hero,
+.app-shell[data-theme="glass"] .chat-panel,
+.app-shell[data-theme="glass"] .mobile-nav,
+.app-shell[data-theme="glass"] .theme-picker,
+.app-shell[data-theme="glass"] .inbox-search,
+.app-shell[data-theme="glass"] .new-chat-modal,
+.app-shell[data-theme="glass"] .chat-header,
+.app-shell[data-theme="glass"] .chat-compose {
+  background: linear-gradient(135deg, rgba(255,255,255,.075), rgba(255,255,255,.012) 55%, rgba(255,255,255,.035)), rgba(19, 17, 33, .19);
+  border-color: rgba(239, 233, 255, .19);
+  box-shadow: 0 18px 48px rgba(0,0,0,.16), inset 0 1px 0 rgba(255,255,255,.10);
+  -webkit-backdrop-filter: blur(30px) saturate(175%);
+  backdrop-filter: blur(30px) saturate(175%);
+}
+.app-shell[data-theme="glass"] .chat-messages {
+  background: rgba(9, 8, 19, .08);
+}
+.app-shell[data-theme="glass"] .chat-bubble {
+  background: rgba(255,255,255,.065);
+  border-color: rgba(255,255,255,.13);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+  backdrop-filter: blur(18px) saturate(150%);
+}
+.app-shell[data-theme="glass"] .chat-compose input,
+.app-shell[data-theme="glass"] .field-label input,
+.app-shell[data-theme="glass"] .search-bar {
+  background: rgba(8,7,17,.16);
+}
+.app-shell .security-method-list { display: grid; gap: 9px; margin-top: 14px; }
+.app-shell .security-method-list > div {
+  display: grid;
+  grid-template-columns: 34px minmax(0,1fr) auto;
+  align-items: center;
+  gap: 11px;
+  padding: 12px;
+  border: 1px solid var(--app-line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--app-panel) 82%, transparent);
+}
+.app-shell .security-method-icon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid var(--app-line);
+  border-radius: 10px;
+  color: var(--app-text);
+}
+.app-shell .security-method-list strong,
+.app-shell .security-method-list small { display: block; }
+.app-shell .security-method-list strong { color: var(--app-text); font-size: 12px; }
+.app-shell .security-method-list small { margin-top: 3px; color: var(--app-muted); font-size: 11px; line-height: 1.45; }
+.app-shell .security-method-list em { color: var(--app-muted); font-size: 10px; font-style: normal; white-space: nowrap; }
+@media (max-width: 480px) {
+  .app-shell .security-method-list > div { grid-template-columns: 30px minmax(0,1fr); }
+  .app-shell .security-method-list em { grid-column: 2; }
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .app-shell[data-theme="glass"] .glass-panel,
+  .app-shell[data-theme="glass"] .list-panel,
+  .app-shell[data-theme="glass"] .form-panel,
+  .app-shell[data-theme="glass"] .person-card,
+  .app-shell[data-theme="glass"] .mobile-nav,
+  .app-shell[data-theme="glass"] .chat-panel { background: rgba(25, 21, 42, .88); }
+}
